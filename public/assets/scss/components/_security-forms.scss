@@ -1,0 +1,195 @@
+// Security Forms Component Styles
+
+.security-form {
+	position: relative;
+
+	&.protected {
+		&::before {
+			content: '';
+			position: absolute;
+			top: -2px;
+			left: -2px;
+			right: -2px;
+			bottom: -2px;
+			background: linear-gradient(45deg, var(--security-primary), var(--security-info));
+			border-radius: 0.5rem;
+			z-index: -1;
+			opacity: 0.1;
+		}
+	}
+}
+
+.security-field {
+	display: none !important;
+	position: absolute !important;
+	left: -9999px !important;
+	top: -9999px !important;
+	visibility: hidden !important;
+	opacity: 0 !important;
+	pointer-events: none !important;
+	tab-index: -1 !important;
+}
+
+.security-indicator {
+	display: inline-flex;
+	align-items: center;
+	font-size: 0.875rem;
+	color: var(--security-primary);
+	margin-left: 0.5rem;
+
+	&::before {
+		content: '🛡️';
+		margin-right: 0.25rem;
+	}
+
+	&.csrf-protected::before {
+		content: '🔒';
+	}
+
+	&.honeypot-active::before {
+		content: '🍯';
+	}
+
+	&.rate-limited::before {
+		content: '⏱️';
+	}
+}
+
+.security-error {
+	border-left: 4px solid var(--security-danger);
+	background-color: rgba(220, 53, 69, 0.05);
+	animation: slideInDown 0.3s ease-out;
+}
+
+.security-success {
+	border-left: 4px solid var(--security-primary);
+	background-color: rgba(25, 135, 84, 0.05);
+	animation: slideInDown 0.3s ease-out;
+}
+
+.security-warning {
+	border-left: 4px solid var(--security-warning);
+	background-color: rgba(255, 193, 7, 0.05);
+	animation: slideInDown 0.3s ease-out;
+}
+
+// Form validation states
+.form-control {
+	&.security-valid {
+		border-color: var(--security-primary);
+		box-shadow: 0 0 0 0.2rem rgba(25, 135, 84, 0.25);
+	}
+
+	&.security-invalid {
+		border-color: var(--security-danger);
+		box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+	}
+}
+
+// Security status badges
+.security-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.25rem 0.5rem;
+	border-radius: 0.375rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+
+	&.csrf {
+		background-color: rgba(25, 135, 84, 0.1);
+		color: var(--security-primary);
+		border: 1px solid rgba(25, 135, 84, 0.3);
+	}
+
+	&.honeypot {
+		background-color: rgba(255, 193, 7, 0.1);
+		color: #b45309;
+		border: 1px solid rgba(255, 193, 7, 0.3);
+	}
+
+	&.rate-limit {
+		background-color: rgba(13, 202, 240, 0.1);
+		color: #055160;
+		border: 1px solid rgba(13, 202, 240, 0.3);
+	}
+
+	&.spam-filter {
+		background-color: rgba(111, 66, 193, 0.1);
+		color: #6f42c1;
+		border: 1px solid rgba(111, 66, 193, 0.3);
+	}
+}
+
+// Submit button security styles
+.btn-submit-secure {
+	position: relative;
+	overflow: hidden;
+
+	&::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+		transition: left 0.5s;
+	}
+
+	&:hover::before {
+		left: 100%;
+	}
+
+	&.processing {
+		pointer-events: none;
+		opacity: 0.7;
+
+		&::after {
+			content: '';
+			display: inline-block;
+			width: 1rem;
+			height: 1rem;
+			margin-left: 0.5rem;
+			border: 2px solid currentColor;
+			border-radius: 50%;
+			border-top-color: transparent;
+			animation: spin 1s linear infinite;
+		}
+	}
+}
+
+// Animations
+@keyframes slideInDown {
+	from {
+		transform: translate3d(0, -100%, 0);
+		visibility: visible;
+	}
+
+	to {
+		transform: translate3d(0, 0, 0);
+	}
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+// Responsive adjustments
+@media (max-width: 768px) {
+	.security-indicator {
+		font-size: 0.75rem;
+
+		&::before {
+			margin-right: 0.125rem;
+		}
+	}
+
+	.security-badge {
+		font-size: 0.65rem;
+		padding: 0.125rem 0.375rem;
+	}
+}

@@ -1,0 +1,37 @@
+{
+	"name": "yohns-stop-spam-assets",
+	"version": "1.0.0",
+	"description": "Frontend assets for Yohns Stop Spam library",
+	"scripts": {
+		"build": "npm run build-css && npm run build-js",
+		"build-css": "sass public/assets/scss:public/assets/css --style compressed",
+		"build-js": "uglifyjs public/assets/js/src/*.js -o public/assets/js/security-validator.min.js --compress --mangle",
+		"watch": "npm run watch-css & npm run watch-js",
+		"watch-css": "sass --watch public/assets/scss:public/assets/css --style expanded",
+		"watch-js": "chokidar 'public/assets/js/src/*.js' -c 'npm run build-js'",
+		"dev": "npm run watch"
+	},
+	"devDependencies": {
+		"sass": "1.78.0",
+		"uglify-js": "^3.19.0",
+		"chokidar-cli": "^3.0.0"
+	},
+	"dependencies": {
+		"bootstrap": "5.3.7"
+	},
+	"keywords": [
+		"security",
+		"spam",
+		"csrf",
+		"honeypot",
+		"rate-limiting",
+		"bootstrap"
+	],
+	"author": "Yohn",
+	"license": "MIT",
+	"browserslist": [
+		"last 2 versions",
+		"> 1%",
+		"not dead"
+	]
+}

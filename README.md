@@ -1,138 +1,358 @@
-# Comprehensive Spam Prevention and Security System
+# Yohns Stop Spam
 
-## System Overview
+A comprehensive spam prevention and security library for PHP 8.2+ applications. This library combines rate limiting, CSRF protection, honeypot fields, timing analysis, and content spam detection into a unified security solution.
 
-We've developed a comprehensive spam prevention and security system for your social network using PHP 8.2+ OOP principles and vanilla JavaScript. The system focuses on two key security aspects:
+## Features
 
-1. **CSRF Protection**
-2. **Honeypot Fields and Timing Analysis**
+### 🛡️ Core Security Components
 
-The system is designed to be modular, configurable, and easy to integrate into existing applications.
+- **CSRF Protection**: Token-based protection against cross-site request forgery
+- **Rate Limiting**: Progressive timeouts with customizable thresholds
+- **Honeypot Fields**: Hidden form fields to catch automated submissions
+- **Content Spam Detection**: AI-powered content analysis with keyword filtering
+- **File-based Storage**: Simple JSON file storage (no database required)
+- **Bootstrap 5.3.7 Integration**: Pre-built responsive UI components
 
-## Key Components
+### 🚀 Advanced Features
 
-### 1. CSRF Protection
+- **Progressive Rate Limiting**: Automatic escalation for repeat offenders
+- **Client-side Validation**: JavaScript validation with server-side verification
+- **Comprehensive Logging**: Track security events and violations
+- **Easy Configuration**: JSON-based configuration system
+- **Automatic Cleanup**: Self-maintaining storage with configurable retention
 
-The CSRF protection system includes:
+## Installation
 
-- **CSRFToken Class**: Core class for generating and validating secure tokens
-- **CSRFMiddleware**: Automated protection for routes and endpoints
-- **TokenStorage**: Alternative database storage for stateless applications
+### Via Composer
 
-Features:
-- Form token generation and validation
-- Configurable token expiration (default 30 minutes)
-- Session-bound tokens
-- Automatic token rotation
-- JavaScript validation before form submission
-- Support for AJAX requests with header-based tokens
-
-### 2. Honeypot Fields and Timing Analysis
-
-The spam detection system includes:
-
-- **Honeypot Class**: Core honeypot and timing analysis functionality
-- **SpamDetector**: Combined approach with multiple detection techniques
-- **SecurityValidator.js**: Client-side validation and bot detection
-
-Features:
-- Hidden form fields to catch automated submissions
-- Timing analysis to detect bot submissions
-- Challenge questions for suspicious submissions
-- JavaScript-based bot detection methods
-- Suspicious behavior logging and analytics
-
-### 3. Supporting Components
-
-- **SecurityConfig**: Configuration management and defaults
-- **Database Schema**: Tables for tokens, rate limits, and spam detection logs
-- **JavaScript Library**: Client-side validation and protection
-
-## Technical Highlights
-
-### OOP Design Principles
-
-The system follows modern OOP design principles:
-
-- **Single Responsibility Principle**: Each class has a clear, focused purpose
-- **Open/Closed Principle**: Classes are easily extensible without modification
-- **Dependency Injection**: Services can be configured with external dependencies
-- **Composition Over Inheritance**: Components can be combined for advanced protection
-
-### Security-First Approach
-
-The system implements multiple security best practices:
-
-- **Defense in Depth**: Multiple layers of protection
-- **Fail-Secure Defaults**: Secure configuration by default
-- **Progressive Enhancement**: Works with or without JavaScript
-- **Comprehensive Logging**: Detailed logs for security analysis and tuning
-
-### Performance Considerations
-
-The system is designed to be lightweight and performant:
-
-- **Minimal Database Queries**: Optional database storage with efficient queries
-- **Lightweight JavaScript**: No external dependencies or libraries
-- **Configurable Protection Levels**: Adjust security measures based on risk profile
-- **Efficient Token Management**: Automatic cleanup of expired tokens
-
-## Implementation Documentation
-
-### Class Structure
-
-```
-Yohns\Security\
-├── CSRFToken.php           # Core CSRF protection
-├── CSRFMiddleware.php      # Automatic CSRF validation
-├── Honeypot.php            # Honeypot and timing analysis
-├── SpamDetector.php        # Combined security approach
-├── SecurityConfig.php      # Configuration management
-└── TokenStorage.php        # Database token storage
+```bash
+composer require yohns/stop-spam
 ```
 
-### Database Schema
+### Requirements
 
-Tables created for security management:
+- PHP 8.2 or higher
+- JSON extension
+- yohns/config ^1.2
+- myjw3b/php-pdo-chainer (for advanced features)
 
-- `security_csrf_tokens`: For database-based token storage
-- `security_rate_limits`: For tracking and enforcing rate limits
-- `security_spam_log`: For detailed logging of detected spam attempts
-- `security_ip_reputation`: For tracking suspicious IPs
+## Quick Start
 
-### JavaScript Components
+### 1. Basic Setup
 
-- `SecurityValidator.js`: Client-side validation and bot detection
+```php
+<?php
+require_once 'vendor/autoload.php';
 
-## Key Features
+use Yohns\Core\Config;
+use Yohns\Security\SecurityManager;
 
-1. **Modular Design**: Use only the components you need
-2. **Highly Configurable**: Adjust settings to match your application's needs
-3. **Multiple Detection Techniques**: Combined approach for better accuracy
-4. **Detailed Logging**: Monitor and analyze spam attempts
-5. **Progressive Enhancement**: Works with or without JavaScript
-6. **Easy Integration**: Simple implementation in existing applications
+// Initialize configuration
+$config = new Config(__DIR__ . '/config');
 
-## Use Cases
+// Start session
+session_start();
 
-The system is particularly suited for:
+// Initialize security manager
+$security = new SecurityManager($_SESSION['user_id'] ?? null);
+```
 
-1. **Social Networks**: Protect comments, posts, and profile updates
-2. **Registration Forms**: Prevent automated account creation
-3. **Contact Forms**: Reduce spam submissions
-4. **User Authentication**: Add an extra layer of security
-5. **API Endpoints**: Protect against CSRF attacks on API routes
+### 2. Secure Form Example
 
-## Examples Provided
+```php
+// Initialize form security
+$formSecurity = $security->initializeForm('contact_form');
 
-1. **Basic Implementation**: Simple contact form with full protection
-2. **Advanced Implementation**: AJAX-based comment system with security measures
+// Handle form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $securityCheck = $security->securityCheck('contact', $_POST, true, 0.6);
 
-## Extensions & Customization
+    if ($securityCheck['passed']) {
+        // Process form safely
+        $content = $security->validateContent($_POST['message']);
+        echo "Message processed: " . htmlspecialchars($content);
+    } else {
+        echo "Security check failed: " . $securityCheck['reason'];
+    }
+}
+?>
 
-The system is designed to be extensible. Potential extensions include:
+<form method="post" data-validate="true" id="contact_form">
+    <?= $formSecurity['csrf_field'] ?>
+    <?= $formSecurity['honeypot_field'] ?>
 
-1. **Captcha Integration**: Add support for CAPTCHA challenges
-2. **IP-Based Rate Limiting**: Implement more sophisticated rate limiting
-3. **Machine Learning**: Add ML-based spam detection
-4. **Custom Storage Backends**: Implement alternative token storage (Redis, Memcached)
+    <textarea name="message" placeholder="Your message"></textarea>
+    <button type="submit">Submit</button>
+</form>
+
+<?= $formSecurity['honeypot_css'] ?>
+<script src="public/assets/js/security-validator.js"></script>
+```
+
+## Configuration
+
+### Basic Configuration (`config/security.php`)
+
+```php
+<?php
+return [
+    // File Storage Settings
+    'storage' => [
+        'type' => 'json',
+        'directory' => __DIR__ . '/../database',
+        'auto_cleanup' => true,
+        'cleanup_interval' => 3600, // 1 hour
+    ],
+
+    // CSRF Protection
+    'csrf' => [
+        'enabled' => true,
+        'expiration' => 1800, // 30 minutes
+        'token_length' => 32,
+    ],
+
+    // Rate Limiting
+    'rate_limiting' => [
+        'enabled' => true,
+        'login_max' => 5, // attempts per 15 minutes
+        'per_ip' => 300, // requests per minute
+        'block_duration' => 900, // 15 minutes
+    ],
+
+    // Spam Detection
+    'spam_detection' => [
+        'enabled' => true,
+        'max_links' => 3,
+        'max_capitals_percent' => 70,
+    ],
+
+    // Domain Configuration
+    'domain' => [
+        'base_url' => 'https://yoursite.com',
+        'allowed_origins' => ['https://yoursite.com'],
+    ],
+];
+```
+
+## Components
+
+### SecurityManager
+
+The main coordination class that brings all security components together:
+
+```php
+$security = new SecurityManager($userId);
+
+// Comprehensive security check
+$result = $security->securityCheck('post', $_POST, true, 0.6);
+
+// Individual component access
+$csrf = $security->getCSRFToken();
+$rateLimiter = $security->getRateLimiter();
+$honeypot = $security->getHoneypot();
+$spamDetector = $security->getSpamDetector();
+```
+
+### CSRF Protection
+
+```php
+$csrf = new CSRFToken();
+
+// Generate token for form
+$token = $csrf->generateToken('form_name');
+
+// Validate token
+if ($csrf->validateRequest('form_name')) {
+    // Token is valid
+}
+
+// Get HTML field
+echo $csrf->getHiddenField('form_name');
+```
+
+### Rate Limiting
+
+```php
+$rateLimiter = new RateLimiter();
+
+// Check if request should be limited
+if ($rateLimiter->isLimited($ipAddress, 'login', $userId)) {
+    // Request is rate limited
+    $remainingTime = $rateLimiter->getBlockTimeRemaining($identifier, 'login');
+    echo "Try again in " . ceil($remainingTime / 60) . " minutes";
+}
+```
+
+### Honeypot Detection
+
+```php
+$honeypot = new Honeypot();
+
+// Initialize honeypot for form
+$honeypotField = $honeypot->initialize('contact_form');
+
+// Validate submission
+$result = $honeypot->validate($_POST, 'contact_form');
+if (!$result['passed']) {
+    echo "Bot detected: " . $result['reason'];
+}
+```
+
+### Spam Detection
+
+```php
+$spamDetector = new SpamDetector();
+
+// Analyze content
+$analysis = $spamDetector->analyzeContent($userContent);
+
+if ($analysis['is_spam']) {
+    echo "Spam detected (score: {$analysis['spam_score']})";
+    echo "Reasons: " . implode(', ', $analysis['reasons']);
+}
+
+// Clean content
+$cleanContent = $spamDetector->cleanContent($userContent);
+```
+
+## Frontend Integration
+
+### JavaScript Security Validator
+
+```html
+<script src="public/assets/js/security-validator.js"></script>
+<script>
+SecurityValidator.init({
+    enableBotDetection: true,
+    enableTimingAnalysis: true,
+    enableCSRFValidation: true,
+    debugMode: false
+});
+</script>
+```
+
+### Bootstrap 5.3.7 Styling
+
+```html
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="public/assets/css/security-components.css" rel="stylesheet">
+```
+
+## File Storage Structure
+
+The library uses JSON files for data storage:
+
+```
+database/
+├── csrf_tokens.json          # CSRF token storage
+├── rate_limits.json          # Rate limiting data
+├── spam_log.json             # Spam detection logs
+├── honeypot_sessions.json    # Honeypot timing data
+├── spam_keywords.json        # Spam keyword lists
+├── profanity_list.json       # Profanity filter words
+└── security_log.json         # General security events
+```
+
+## Directory Structure
+
+```
+yohns-stop-spam/
+├── Yohns/
+│   ├── Security/
+│   │   ├── FileStorage.php
+│   │   ├── CSRFToken.php
+│   │   ├── RateLimiter.php
+│   │   └── SecurityManager.php
+│   └── AntiSpam/
+│       ├── Honeypot.php
+│       └── SpamDetector.php
+├── config/
+│   └── security.php
+├── database/
+├── docs/
+├── examples/
+│   └── bootstrap_form_example.php
+├── public/assets/
+│   ├── js/
+│   │   └── security-validator.js
+│   └── scss/
+│       ├── main.scss
+│       └── components/
+└── composer.json
+```
+
+## API Reference
+
+### SecurityManager Methods
+
+- `securityCheck(string $actionType, array $postData, bool $requireCSRF = true, float $spamThreshold = 0.5, string $formId = 'default'): array`
+- `initializeForm(string $formId = 'default'): array`
+- `validateContent(string $content, bool $allowHtml = false, bool $cleanProfanity = true): string`
+- `checkIPSecurity(string $ipAddress = null): array`
+- `getSecurityStats(): array`
+- `performMaintenance(): array`
+
+### Rate Limiter Methods
+
+- `isLimited(string $ipAddress, string $actionType, ?int $userId = null): bool`
+- `isBlocked(string $identifier, string $actionType): bool`
+- `getRemainingRequests(string $identifier, string $actionType): int`
+- `getBlockTimeRemaining(string $identifier, string $actionType): int`
+
+### Spam Detector Methods
+
+- `analyzeContent(string $content): array`
+- `cleanContent(string $content): string`
+- `shouldAutoBlock(string $content): bool`
+- `addSpamKeyword(string $keyword): bool`
+- `removeSpamKeyword(string $keyword): bool`
+
+## Examples
+
+See the `examples/` directory for complete implementation examples:
+
+- `bootstrap_form_example.php` - Complete Bootstrap 5.3.7 form with all security features
+- `api_example.php` - API endpoint protection example
+- `admin_dashboard.php` - Security statistics dashboard
+
+## Performance
+
+- **Lightweight**: Minimal memory footprint with efficient JSON storage
+- **Fast**: Optimized algorithms with intelligent caching
+- **Scalable**: File-based storage eliminates database dependencies
+- **Configurable**: Adjust security levels based on your needs
+
+## Security Best Practices
+
+1. **Regular Updates**: Keep spam keywords and patterns updated
+2. **Monitor Logs**: Review security logs regularly for patterns
+3. **Adjust Thresholds**: Fine-tune detection thresholds based on your user base
+4. **Backup Data**: Regularly backup your security configuration and logs
+5. **HTTPS Only**: Always use HTTPS in production environments
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Follow PSR-12 coding standards
+5. Submit a pull request
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Support
+
+- **Documentation**: Complete API documentation in `/docs`
+- **Examples**: Working examples in `/examples`
+- **Issues**: Report bugs and feature requests on GitHub
+
+## Changelog
+
+### v1.0.0
+- Initial release
+- Complete security suite with file-based storage
+- Bootstrap 5.3.7 integration
+- Comprehensive JavaScript validation
+- Full documentation and examples

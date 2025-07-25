@@ -1,0 +1,34 @@
+// Main SCSS file for Yohns Stop Spam library
+// Following Bootstrap 5.3.7 structure
+
+// Import Bootstrap
+@import "./../../../node_modules/bootstrap/scss/bootstrap.scss";
+
+// Custom variables
+:root {
+	--security-primary: #198754;
+	--security-danger: #dc3545;
+	--security-warning: #ffc107;
+	--security-info: #0dcaf0;
+	--security-light: #f8f9fa;
+	--security-dark: #212529;
+}
+
+// Component-specific styles
+@import "components/security-forms";
+@import "components/honeypot";
+@import "components/alerts";
+@import "components/stats";
+
+// Page-specific styles
+@import "pages/examples";
+@import "pages/dashboard";
+
+// Utility classes
+.security-hidden {
+	display: none !important;
+	position: absolute !important;
+	left: -9999px !important;
+	top: -9999px !important;
+	visibility: hidden !important;
+}

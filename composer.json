@@ -1,0 +1,27 @@
+{
+	"name": "yohns/stop-spam",
+	"description": "Comprehensive spam prevention and security system with rate limiting, CSRF protection, and anti-spam features",
+	"type": "library",
+	"license": "MIT",
+	"authors": [
+		{
+			"name": "Yohn",
+			"email": "john.skem9@gmail.com"
+		}
+	],
+	"require": {
+		"php": "^8.2",
+		"yohns/config": "^1.2"
+	},
+	"require-dev": {
+		"clean/phpdoc-md": "^0.19.3"
+	},
+	"autoload": {
+		"psr-4": {
+			"Yohns\\": "Yohns/"
+		}
+	},
+	"suggest": {
+		"ext-json": "Required for JSON file storage operations"
+	}
+}

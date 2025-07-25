@@ -1,0 +1,319 @@
+// Alert Component Styles
+
+.alert {
+	// Enhanced security alerts
+	&.alert-security {
+		border: none;
+		border-left: 4px solid;
+		border-radius: 0.5rem;
+		box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+
+		&-success {
+			border-left-color: var(--bs-success);
+			background: linear-gradient(135deg, rgba(var(--bs-success-rgb), 0.1), rgba(var(--bs-success-rgb), 0.05));
+			color: var(--bs-success);
+
+			.alert-icon::before {
+				content: '✅';
+				margin-right: 0.5rem;
+			}
+		}
+
+		&-warning {
+			border-left-color: var(--bs-warning);
+			background: linear-gradient(135deg, rgba(var(--bs-warning-rgb), 0.1), rgba(var(--bs-warning-rgb), 0.05));
+			color: #856404;
+
+			.alert-icon::before {
+				content: '⚠️';
+				margin-right: 0.5rem;
+			}
+		}
+
+		&-danger {
+			border-left-color: var(--bs-danger);
+			background: linear-gradient(135deg, rgba(var(--bs-danger-rgb), 0.1), rgba(var(--bs-danger-rgb), 0.05));
+			color: var(--bs-danger);
+
+			.alert-icon::before {
+				content: '🚫';
+				margin-right: 0.5rem;
+			}
+		}
+
+		&-info {
+			border-left-color: var(--bs-info);
+			background: linear-gradient(135deg, rgba(var(--bs-info-rgb), 0.1), rgba(var(--bs-info-rgb), 0.05));
+			color: var(--bs-info);
+
+			.alert-icon::before {
+				content: 'ℹ️';
+				margin-right: 0.5rem;
+			}
+		}
+	}
+}
+
+// Specific security alert types
+.security-alert {
+	&-csrf {
+		.alert-icon::before {
+			content: '🔒';
+		}
+	}
+
+	&-spam {
+		.alert-icon::before {
+			content: '🚯';
+		}
+	}
+
+	&-rate-limit {
+		.alert-icon::before {
+			content: '⏱️';
+		}
+	}
+
+	&-honeypot {
+		.alert-icon::before {
+			content: '🍯';
+		}
+	}
+
+	&-ip-blocked {
+		.alert-icon::before {
+			content: '🚷';
+		}
+	}
+}
+
+// Toast notifications for security events
+.toast {
+	&.security-toast {
+		border: none;
+		box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+
+		.toast-header {
+			border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+
+			&.toast-success {
+				background-color: rgba(var(--bs-success-rgb), 0.1);
+				color: var(--bs-success);
+			}
+
+			&.toast-warning {
+				background-color: rgba(var(--bs-warning-rgb), 0.1);
+				color: #856404;
+			}
+
+			&.toast-danger {
+				background-color: rgba(var(--bs-danger-rgb), 0.1);
+				color: var(--bs-danger);
+			}
+		}
+	}
+}
+
+// Floating security status indicator
+.security-status-float {
+	position: fixed;
+	top: 20px;
+	right: 20px;
+	z-index: 1050;
+	max-width: 300px;
+
+	.status-card {
+		background: white;
+		border-radius: 0.5rem;
+		box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+		padding: 1rem;
+		border-left: 4px solid var(--bs-success);
+
+		&.status-warning {
+			border-left-color: var(--bs-warning);
+		}
+
+		&.status-danger {
+			border-left-color: var(--bs-danger);
+		}
+
+		.status-header {
+			display: flex;
+			align-items: center;
+			margin-bottom: 0.5rem;
+
+			.status-icon {
+				margin-right: 0.5rem;
+				font-size: 1.2em;
+			}
+
+			.status-title {
+				font-weight: 600;
+				font-size: 0.9rem;
+			}
+		}
+
+		.status-details {
+			font-size: 0.8rem;
+			color: var(--bs-secondary);
+			margin-bottom: 0.5rem;
+		}
+
+		.status-actions {
+			display: flex;
+			gap: 0.5rem;
+
+			.btn {
+				padding: 0.25rem 0.5rem;
+				font-size: 0.75rem;
+			}
+		}
+	}
+}
+
+// Progressive enhancement alerts
+.alert-progressive {
+	position: relative;
+	overflow: hidden;
+
+	&::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 2px;
+		background: currentColor;
+		animation: progressAlert 3s ease-in-out;
+	}
+
+	&.alert-auto-dismiss {
+		animation: fadeOutAlert 0.5s ease-in-out 4.5s forwards;
+	}
+}
+
+// Multi-line security alerts with expandable details
+.alert-expandable {
+	.alert-summary {
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+
+		.expand-icon {
+			transition: transform 0.3s ease;
+
+			&.expanded {
+				transform: rotate(180deg);
+			}
+		}
+	}
+
+	.alert-details {
+		max-height: 0;
+		overflow: hidden;
+		transition: max-height 0.3s ease;
+
+		&.expanded {
+			max-height: 200px;
+			padding-top: 0.75rem;
+			border-top: 1px solid rgba(0, 0, 0, 0.1);
+			margin-top: 0.75rem;
+		}
+
+		.detail-list {
+			margin: 0;
+			padding-left: 1.25rem;
+
+			li {
+				margin-bottom: 0.25rem;
+				font-size: 0.9rem;
+			}
+		}
+	}
+}
+
+// Security score indicator in alerts
+.security-score {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.25rem 0.5rem;
+	border-radius: 0.375rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+	margin-left: 0.5rem;
+
+	&.score-high {
+		background-color: rgba(var(--bs-success-rgb), 0.2);
+		color: var(--bs-success);
+	}
+
+	&.score-medium {
+		background-color: rgba(var(--bs-warning-rgb), 0.2);
+		color: #856404;
+	}
+
+	&.score-low {
+		background-color: rgba(var(--bs-danger-rgb), 0.2);
+		color: var(--bs-danger);
+	}
+}
+
+// Animations
+@keyframes progressAlert {
+	from {
+		left: -100%;
+	}
+	to {
+		left: 100%;
+	}
+}
+
+@keyframes fadeOutAlert {
+	from {
+		opacity: 1;
+		transform: translateY(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateY(-10px);
+	}
+}
+
+@keyframes slideInAlert {
+	from {
+		opacity: 0;
+		transform: translateX(100%);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+.alert-slide-in {
+	animation: slideInAlert 0.3s ease-out;
+}
+
+// Responsive adjustments
+@media (max-width: 768px) {
+	.security-status-float {
+		top: 10px;
+		right: 10px;
+		left: 10px;
+		max-width: none;
+	}
+
+	.alert-expandable {
+		.alert-summary {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.5rem;
+		}
+	}
+
+	.security-score {
+		margin-left: 0;
+		margin-top: 0.25rem;
+	}
+}

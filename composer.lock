@@ -1,0 +1,66 @@
+{
+    "_readme": [
+        "This file locks the dependencies of your project to a known state",
+        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
+        "This file is @generated automatically"
+    ],
+    "content-hash": "2ac1a58359da435e7832f0a5f1e228dc",
+    "packages": [
+        {
+            "name": "yohns/config",
+            "version": "1.2.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Yohn/Config.git",
+                "reference": "ce73eec942e1beb92cafc807ff656493365e422d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Yohn/Config/zipball/ce73eec942e1beb92cafc807ff656493365e422d",
+                "reference": "ce73eec942e1beb92cafc807ff656493365e422d",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.0"
+            },
+            "require-dev": {
+                "clean/phpdoc-md": "^0.19.3"
+            },
+            "type": "project",
+            "autoload": {
+                "psr-4": {
+                    "Yohns\\Core\\": "Core/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "John Brittain III",
+                    "email": "Yohn@coming-soon.com",
+                    "homepage": "https://github.com/Yohn",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Loading files in config folder and set in an array for use later.",
+            "support": {
+                "issues": "https://github.com/Yohn/Config/issues",
+                "source": "https://github.com/Yohn/Config/tree/1.2.1"
+            },
+            "time": "2024-11-22T19:54:38+00:00"
+        }
+    ],
+    "packages-dev": [],
+    "aliases": [],
+    "minimum-stability": "stable",
+    "stability-flags": [],
+    "prefer-stable": false,
+    "prefer-lowest": false,
+    "platform": {
+        "php": "^8.2"
+    },
+    "platform-dev": [],
+    "plugin-api-version": "2.3.0"
+}

@@ -1,106 +1,117 @@
 <?php
 
 return [
-	// Token security settings
-	'token_secret' => '', // Will be generated automatically if empty
 
-	// Trusted proxy IPs (for getting real client IP behind load balancers)
-	'trusted_proxies' => [
-		'127.0.0.1',
-		'::1',
-		// Add your load balancer/proxy IPs here
+	// Debug and Development
+	'app' => [
+		'debug' => false, // Set to true for development debugging
 	],
 
-	// Blacklisted IP addresses or CIDR ranges
-	'blacklisted_ips' => [
-		// Example: '192.168.1.100',
-		// Example CIDR: '10.0.0.0/8',
+	// File Storage Settings
+	'storage'            => [
+		'type'                  => 'json', // json file storage
+		'directory'             => __DIR__ . '/../database',
+		'file_permissions'      => 0664,
+		'directory_permissions' => 0755,
+		'auto_cleanup'          => true,
+		'cleanup_interval'      => 3600, // 1 hour in seconds
 	],
 
-	// Whitelisted IP addresses or CIDR ranges (bypass rate limiting and blacklist)
-	'whitelisted_ips' => [
-		// Example: '192.168.1.1',
-		// Example: '127.0.0.1',
+	// CSRF Protection
+	'csrf'               => [
+		'enabled'        => true,
+		'expiration'     => 1800, // 30 minutes in seconds
+		'session_prefix' => 'csrf_token_',
+		'header_name'    => 'X-CSRF-TOKEN',
+		'cookie_name'    => 'XSRF-TOKEN',
+		'same_site'      => 'Lax',
+		'token_length'   => 32,
 	],
 
-	// Spam keywords to detect in content
-	'spam_keywords' => [
-		'viagra',
-		'cialis',
-		'casino',
-		'lottery',
-		'winner',
-		'congratulations',
-		'urgent',
-		'click here',
-		'act now',
-		'limited time',
-		'free money',
-		'make money fast',
-		'work from home',
-		'guaranteed',
-		'no obligation',
-		'risk free',
-		'amazing deal',
-		'special promotion',
-		'exclusive offer',
-		'once in lifetime',
+	// Honeypot Detection
+	'honeypot'           => [
+		'enabled'        => true,
+		'field_name'     => 'website',
+		'min_time'       => 2, // seconds
+		'max_time'       => 3600, // 1 hour in seconds
+		'session_prefix' => 'honeypot_',
 	],
 
-	// Regular expression patterns for spam detection
-	'spam_patterns' => [
-		// URLs with suspicious TLDs
-		'/https?:\/\/.*\.(xyz|top|loan|work|click|gq|ml|ga|cf|tk)\b/i',
-		// Too many URLs in content
-		'/((https?:\/\/|www\.)[^\s<>"\']+){5,}/i',
-		// Excessive use of keywords like "free", "discount", "offer"
-		'/\b(free|discount|offer|buy|sell|promotion|deal|limited\s+time|special\s+offer)\b.*\1.*\1.*\1/i',
-		// Hidden text using CSS tricks
-		'/style\s*=\s*["\'].*display\s*:\s*none/i',
-		// Excessive capitalization
-		'/[A-Z\s]{50,}/',
-		// Phone numbers with common spam patterns
-		'/\b(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}\b.*\b(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}\b/i',
+	// Spam Detection
+	'spam_detection'     => [
+		'enabled'              => true,
+		'log_enabled'          => true,
+		'log_file'             => __DIR__ . '/../database/spam_log.json',
+		'challenge_enabled'    => false,
+		'js_token_secret'      => 'your-random-secret-key-change-this',
+		'max_links'            => 3,
+		'max_capitals_percent' => 70,
+		'max_repeated_chars'   => 5,
 	],
 
-	// Profanity filter words
-	'profanity_list' => [
-		// Add profanity words here as needed
-		// This list is intentionally minimal for the example
-		'badword1',
-		'badword2',
+	// Rate Limiting
+	'rate_limiting'      => [
+		'enabled'          => true,
+		'storage'          => 'json', // json file storage
+		'global_max'       => 1000, // requests per hour
+		'per_endpoint'     => 100, // requests per minute
+		'per_ip'           => 300, // requests per minute
+		'login_max'        => 5, // attempts per 15 minutes
+		'block_duration'   => 900, // 15 minutes in seconds
+		'block_multiplier' => 2.0, // multiplier for repeat offenders
 	],
 
-	// Whether to use the profanity filter
-	'use_profanity_filter' => true,
-
-	// Maximum file upload size (in bytes)
-	'max_upload_size' => 10485760, // 10MB
-
-	// Allowed file extensions for uploads
-	'allowed_file_extensions' => [
-		'jpg', 'jpeg', 'png', 'gif', 'webp', // Images
-		'mp4', 'webm', 'ogg', // Videos
-		'pdf', 'doc', 'docx', 'txt', // Documents
+	// Content Validation
+	'content_validation' => [
+		'enabled'          => true,
+		'max_length'       => 10000,
+		'allow_html'       => false,
+		'strip_tags'       => true,
+		'profanity_filter' => true,
 	],
 
-	// Session security settings
-	'session_timeout' => 3600, // 1 hour
-	'session_regenerate_interval' => 1800, // 30 minutes
+	// IP Security
+	'ip_security'        => [
+		'enabled'         => true,
+		'whitelist'       => [],
+		'blacklist'       => [],
+		'check_proxies'   => true,
+		'max_proxy_depth' => 3,
+	],
 
-	// Password security settings
-	'password_min_length' => 8,
-	'password_require_uppercase' => true,
-	'password_require_lowercase' => true,
-	'password_require_numbers' => true,
-	'password_require_symbols' => false,
+	// Logging
+	'logging'            => [
+		'enabled'       => true,
+		'level'         => 'info', // debug, info, warning, error
+		'directory'     => __DIR__ . '/../database',
+		'max_file_size' => 10485760, // 10MB
+		'max_files'     => 5,
+	],
 
-	// Login attempt settings
-	'max_login_attempts' => 5,
-	'login_lockout_duration' => 900, // 15 minutes
+	// Domain and URLs
+	'domain'             => [
+		'base_url'        => 'http://stop-spam.jb',
+		'allowed_origins' => [
+			'https://stop-spam.jb',
+			'http://stop-spam.jb'
+		],
+	],
 
-	// Content moderation settings
-	'auto_moderate_content' => true,
-	'content_approval_required' => false,
-	'spam_threshold' => 0.6, // 0.0 to 1.0, higher = more strict
+	// Directories
+	'directories'        => [
+		'database'      => __DIR__ . '/../database',
+		'config'        => __DIR__,
+		'docs'          => __DIR__ . '/../docs',
+		'examples'      => __DIR__ . '/../examples',
+		'public_assets' => __DIR__ . '/../public/assets',
+	],
+
+	// Content Security Policy
+	'csp_cdn_sources'    => [
+		'https://cdn.jsdelivr.net',
+		'https://cdnjs.cloudflare.com',
+		'https://fonts.googleapis.com',
+		'https://fonts.gstatic.com',
+		'https://unpkg.com',
+	],
 ];

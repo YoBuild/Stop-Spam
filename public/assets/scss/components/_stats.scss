@@ -1,0 +1,405 @@
+// Statistics Component Styles
+
+.stats-container {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+	gap: 1.5rem;
+	margin-bottom: 2rem;
+}
+
+.stat-card {
+	background: white;
+	border-radius: 0.75rem;
+	padding: 1.5rem;
+	box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+	border: 1px solid rgba(0, 0, 0, 0.05);
+	position: relative;
+	overflow: hidden;
+	transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+	&:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+	}
+
+	&::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 4px;
+		background: var(--bs-primary);
+	}
+
+	&.stat-success::before {
+		background: var(--bs-success);
+	}
+
+	&.stat-warning::before {
+		background: var(--bs-warning);
+	}
+
+	&.stat-danger::before {
+		background: var(--bs-danger);
+	}
+
+	&.stat-info::before {
+		background: var(--bs-info);
+	}
+
+	.stat-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 1rem;
+
+		.stat-title {
+			font-size: 0.875rem;
+			font-weight: 600;
+			color: var(--bs-dark);
+			margin: 0;
+		}
+
+		.stat-icon {
+			width: 40px;
+			height: 40px;
+			border-radius: 0.5rem;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 1.25rem;
+			background: rgba(var(--bs-primary-rgb), 0.1);
+			color: var(--bs-primary);
+		}
+	}
+
+	.stat-value {
+		font-size: 2rem;
+		font-weight: 700;
+		color: var(--bs-dark);
+		margin-bottom: 0.5rem;
+
+		&.large {
+			font-size: 2.5rem;
+		}
+
+		&.small {
+			font-size: 1.5rem;
+		}
+	}
+
+	.stat-change {
+		display: flex;
+		align-items: center;
+		font-size: 0.875rem;
+
+		&.positive {
+			color: var(--bs-success);
+
+			&::before {
+				content: '↗';
+				margin-right: 0.25rem;
+			}
+		}
+
+		&.negative {
+			color: var(--bs-danger);
+
+			&::before {
+				content: '↘';
+				margin-right: 0.25rem;
+			}
+		}
+
+		&.neutral {
+			color: var(--bs-secondary);
+
+			&::before {
+				content: '→';
+				margin-right: 0.25rem;
+			}
+		}
+	}
+
+	.stat-description {
+		font-size: 0.75rem;
+		color: var(--bs-secondary);
+		margin-top: 0.5rem;
+	}
+}
+
+// Security-specific stat cards
+.security-stats {
+	.stat-card {
+		&.csrf-stats {
+			.stat-icon {
+				background: rgba(var(--bs-success-rgb), 0.1);
+				color: var(--bs-success);
+			}
+
+			&::before {
+				background: var(--bs-success);
+			}
+		}
+
+		&.rate-limit-stats {
+			.stat-icon {
+				background: rgba(var(--bs-warning-rgb), 0.1);
+				color: var(--bs-warning);
+			}
+
+			&::before {
+				background: var(--bs-warning);
+			}
+		}
+
+		&.spam-stats {
+			.stat-icon {
+				background: rgba(var(--bs-danger-rgb), 0.1);
+				color: var(--bs-danger);
+			}
+
+			&::before {
+				background: var(--bs-danger);
+			}
+		}
+
+		&.honeypot-stats {
+			.stat-icon {
+				background: rgba(var(--bs-info-rgb), 0.1);
+				color: var(--bs-info);
+			}
+
+			&::before {
+				background: var(--bs-info);
+			}
+		}
+	}
+}
+
+// Progress bars for statistics
+.stat-progress {
+	margin-top: 1rem;
+
+	.progress {
+		height: 6px;
+		border-radius: 3px;
+		background-color: rgba(0, 0, 0, 0.05);
+
+		.progress-bar {
+			border-radius: 3px;
+			transition: width 0.6s ease;
+		}
+	}
+
+	.progress-label {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.75rem;
+		color: var(--bs-secondary);
+		margin-top: 0.25rem;
+	}
+}
+
+// Chart containers for statistics
+.stat-chart {
+	margin-top: 1rem;
+	height: 100px;
+	position: relative;
+
+	canvas {
+		max-height: 100%;
+		width: 100% !important;
+		height: auto !important;
+	}
+}
+
+// Statistics table
+.stats-table {
+	.table {
+		margin-bottom: 0;
+
+		th {
+			border-top: none;
+			font-weight: 600;
+			font-size: 0.875rem;
+			color: var(--bs-dark);
+			background-color: var(--bs-light);
+		}
+
+		td {
+			font-size: 0.875rem;
+			vertical-align: middle;
+		}
+
+		.stat-indicator {
+			width: 12px;
+			height: 12px;
+			border-radius: 50%;
+			display: inline-block;
+			margin-right: 0.5rem;
+
+			&.success {
+				background-color: var(--bs-success);
+			}
+
+			&.warning {
+				background-color: var(--bs-warning);
+			}
+
+			&.danger {
+				background-color: var(--bs-danger);
+			}
+		}
+	}
+}
+
+// Real-time statistics updates
+.stat-realtime {
+	position: relative;
+
+	&::after {
+		content: '';
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background-color: var(--bs-success);
+		animation: pulse 2s infinite;
+	}
+
+	&.updating::after {
+		background-color: var(--bs-warning);
+		animation: pulse 0.5s infinite;
+	}
+}
+
+// Statistics grid for dashboard
+.stats-grid {
+	display: grid;
+	grid-template-columns: repeat(12, 1fr);
+	gap: 1.5rem;
+
+	.stat-card {
+		&.col-span-3 {
+			grid-column: span 3;
+		}
+
+		&.col-span-4 {
+			grid-column: span 4;
+		}
+
+		&.col-span-6 {
+			grid-column: span 6;
+		}
+
+		&.col-span-12 {
+			grid-column: span 12;
+		}
+	}
+}
+
+// Loading state for statistics
+.stat-loading {
+	.stat-value {
+		background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+		background-size: 200% 100%;
+		animation: loading 1.5s infinite;
+		border-radius: 0.25rem;
+		color: transparent;
+	}
+
+	.stat-change,
+	.stat-description {
+		opacity: 0.3;
+	}
+}
+
+// Animations
+@keyframes pulse {
+	0% {
+		transform: scale(1);
+		opacity: 1;
+	}
+	50% {
+		transform: scale(1.1);
+		opacity: 0.7;
+	}
+	100% {
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+
+@keyframes loading {
+	0% {
+		background-position: 200% 0;
+	}
+	100% {
+		background-position: -200% 0;
+	}
+}
+
+// Responsive design
+@media (max-width: 1200px) {
+	.stats-grid {
+		.stat-card {
+			&.col-span-3 {
+				grid-column: span 6;
+			}
+		}
+	}
+}
+
+@media (max-width: 768px) {
+	.stats-container {
+		grid-template-columns: 1fr;
+		gap: 1rem;
+	}
+
+	.stats-grid {
+		grid-template-columns: 1fr;
+		gap: 1rem;
+
+		.stat-card {
+			grid-column: span 1;
+		}
+	}
+
+	.stat-card {
+		padding: 1rem;
+
+		.stat-header {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.5rem;
+		}
+
+		.stat-value {
+			font-size: 1.75rem;
+
+			&.large {
+				font-size: 2rem;
+			}
+		}
+	}
+}
+
+@media (max-width: 576px) {
+	.stat-card {
+		.stat-header {
+			.stat-icon {
+				width: 32px;
+				height: 32px;
+				font-size: 1rem;
+			}
+		}
+
+		.stat-value {
+			font-size: 1.5rem;
+		}
+	}
+}

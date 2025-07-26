@@ -1,0 +1,18 @@
+<?php
+return (object) [
+	'rootNamespace' => 'Yohns',
+	'destDirectory' => 'docs',
+	'format'        => 'github',
+	'classes'       => [
+		'\Yohns\AntiSpam\ContentAnalyzer',
+		'\Yohns\AntiSpam\Honeypot',
+		'\Yohns\AntiSpam\SpamDetector',
+		'\Yohns\Security\ContentValidator',
+		'\Yohns\Security\CSRFToken',
+		'\Yohns\Security\FileStorage',
+		'\Yohns\Security\IPSecurity',
+		'\Yohns\Security\RateLimiter',
+		'\Yohns\Security\SecurityManager',
+		'\Yohns\Security\TokenManager',
+	],
+];

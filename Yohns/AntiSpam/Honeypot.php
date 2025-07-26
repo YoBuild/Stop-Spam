@@ -9,6 +9,19 @@ use Yohns\Security\FileStorage;
  * Honeypot class for detecting automated bot submissions
  *
  * Uses hidden form fields and timing analysis to catch spam bots.
+ *
+ * Usage example:
+ * ```
+ * $honeypot = new Honeypot();
+ * // In your form:
+ * echo $honeypot->getCSS();
+ * echo $honeypot->initialize('contact_form');
+ * // In your form handler:
+ * $result = $honeypot->validate($_POST, 'contact_form');
+ * if (!$result['passed']) {
+ *     die('Spam detected: ' . $result['reason']);
+ * }
+ * ```
  */
 class Honeypot {
 	private FileStorage $storage;
@@ -18,6 +31,19 @@ class Honeypot {
 	private int         $maxTime;
 	private string      $sessionPrefix;
 
+	/**
+	 * Constructor - Initialize honeypot with configuration
+	 *
+	 * Sets up the honeypot system with configuration from Config class.
+	 * Starts session if not already active.
+	 *
+	 * @throws \Exception If FileStorage initialization fails
+	 *
+	 * Usage example:
+	 * ```php
+	 * $honeypot = new Honeypot();
+	 * ```
+	 */
 	public function __construct() {
 		$this->storage = new FileStorage();
 		$this->enabled = Config::get('honeypot.enabled', 'security') ?? true;
@@ -34,6 +60,19 @@ class Honeypot {
 
 	/**
 	 * Initialize honeypot for a form
+	 *
+	 * Creates a honeypot session for the specified form and returns
+	 * the hidden field HTML to include in your form.
+	 *
+	 * @param string $formId Unique identifier for the form (default: 'default')
+	 * @return string HTML for hidden honeypot field
+	 *
+	 * Usage example:
+	 * ```php
+	 * $honeypot = new Honeypot();
+	 * echo $honeypot->initialize('contact_form');
+	 * // Outputs: <input type="text" name="website" value="" style="display:none !important;...">
+	 * ```
 	 */
 	public function initialize(string $formId = 'default'): string {
 		if (!$this->enabled) {
@@ -61,6 +100,23 @@ class Honeypot {
 
 	/**
 	 * Validate honeypot submission
+	 *
+	 * Performs comprehensive validation including honeypot field check,
+	 * timing analysis, and bot behavior detection.
+	 *
+	 * @param array  $postData Form submission data ($_POST)
+	 * @param string $formId   Form identifier used during initialization
+	 * @return array Validation result with 'passed', 'reason', and 'details' keys
+	 *
+	 * Usage example:
+	 * ```php
+	 * $result = $honeypot->validate($_POST, 'contact_form');
+	 * if (!$result['passed']) {
+	 *     error_log('Spam detected: ' . $result['reason']);
+	 *     die('Form submission rejected');
+	 * }
+	 * echo "Form validated successfully!";
+	 * ```
 	 */
 	public function validate(array $postData, string $formId = 'default'): array {
 		$result = [
@@ -96,6 +152,20 @@ class Honeypot {
 
 	/**
 	 * Check if honeypot field was filled (indicates bot)
+	 *
+	 * Verifies that the hidden honeypot field remains empty.
+	 * Bots often fill all form fields automatically.
+	 *
+	 * @param array $postData Form submission data
+	 * @return array Validation result array
+	 *
+	 * Usage example:
+	 * ```php
+	 * $result = $this->checkHoneypotField($_POST);
+	 * if (!$result['passed']) {
+	 *     // Bot detected - honeypot field was filled
+	 * }
+	 * ```
 	 */
 	private function checkHoneypotField(array $postData): array {
 		$result = [
@@ -121,6 +191,20 @@ class Honeypot {
 
 	/**
 	 * Check submission timing (too fast or too slow indicates bot)
+	 *
+	 * Validates that form submission time falls within acceptable range.
+	 * Too fast suggests automated submission, too slow suggests stale form.
+	 *
+	 * @param string $formId Form identifier to check timing for
+	 * @return array Validation result array
+	 *
+	 * Usage example:
+	 * ```php
+	 * $result = $this->checkTiming('contact_form');
+	 * if (!$result['passed']) {
+	 *     // Form submitted too quickly or too slowly
+	 * }
+	 * ```
 	 */
 	private function checkTiming(string $formId): array {
 		$result = [
@@ -185,6 +269,20 @@ class Honeypot {
 
 	/**
 	 * Check for bot behavior patterns
+	 *
+	 * Analyzes submission data for patterns typically associated with
+	 * automated spam bots, including content analysis and submission frequency.
+	 *
+	 * @param array $postData Form submission data to analyze
+	 * @return array Validation result array
+	 *
+	 * Usage example:
+	 * ```php
+	 * $result = $this->checkBotBehavior($_POST);
+	 * if (!$result['passed']) {
+	 *     // Suspicious bot behavior detected
+	 * }
+	 * ```
 	 */
 	private function checkBotBehavior(array $postData): array {
 		$result = [
@@ -248,6 +346,18 @@ class Honeypot {
 
 	/**
 	 * Get hidden field HTML
+	 *
+	 * Returns the HTML input element for the honeypot field.
+	 * This field should be hidden from users but visible to bots.
+	 *
+	 * @return string HTML input element for honeypot field
+	 *
+	 * Usage example:
+	 * ```php
+	 * $honeypot = new Honeypot();
+	 * echo $honeypot->getHiddenField();
+	 * // Outputs: <input type="text" name="website" value="" style="display:none !important;...">
+	 * ```
 	 */
 	public function getHiddenField(): string {
 		if (!$this->enabled) {
@@ -259,6 +369,18 @@ class Honeypot {
 
 	/**
 	 * Get CSS to hide honeypot field
+	 *
+	 * Returns CSS styles to ensure honeypot field remains hidden
+	 * from legitimate users while remaining accessible to bots.
+	 *
+	 * @return string CSS style block for hiding honeypot field
+	 *
+	 * Usage example:
+	 * ```php
+	 * $honeypot = new Honeypot();
+	 * echo $honeypot->getCSS();
+	 * // Place this in your HTML <head> section
+	 * ```
 	 */
 	public function getCSS(): string {
 		if (!$this->enabled) {
@@ -279,6 +401,21 @@ class Honeypot {
 
 	/**
 	 * Log spam attempt
+	 *
+	 * Records detected spam attempts to the spam log for analysis
+	 * and monitoring purposes.
+	 *
+	 * @param string $type    Type of spam detection (e.g., 'honeypot_field', 'timing_too_fast')
+	 * @param array  $details Additional details about the spam attempt
+	 * @return void
+	 *
+	 * Usage example:
+	 * ```php
+	 * $this->logSpamAttempt('custom_rule', [
+	 *     'rule_name' => 'excessive_links',
+	 *     'link_count' => 15
+	 * ]);
+	 * ```
 	 */
 	private function logSpamAttempt(string $type, array $details): void {
 		$this->storage->insert('spam_log', [
@@ -295,6 +432,21 @@ class Honeypot {
 
 	/**
 	 * Get recent submissions from IP
+	 *
+	 * Retrieves spam log entries from a specific IP address within
+	 * the specified time window for rate limiting analysis.
+	 *
+	 * @param string $ipAddress  IP address to check
+	 * @param int    $timeWindow Time window in seconds to check
+	 * @return array Array of recent submission records
+	 *
+	 * Usage example:
+	 * ```php
+	 * $recentSubmissions = $this->getRecentSubmissions('192.168.1.1', 300);
+	 * if (count($recentSubmissions) > 10) {
+	 *     // Too many submissions from this IP
+	 * }
+	 * ```
 	 */
 	private function getRecentSubmissions(string $ipAddress, int $timeWindow): array {
 		$cutoff = time() - $timeWindow;
@@ -307,6 +459,11 @@ class Honeypot {
 
 	/**
 	 * Get client IP address
+	 *
+	 * Determines the real IP address of the client, handling various
+	 * proxy and forwarding scenarios (CloudFlare, load balancers, etc.).
+	 *
+	 * @return string Client IP address or '0.0.0.0' if unable to determine
 	 */
 	private function getClientIP(): string {
 		$ipKeys = ['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'HTTP_CLIENT_IP', 'REMOTE_ADDR'];
@@ -330,6 +487,18 @@ class Honeypot {
 
 	/**
 	 * Clean up old honeypot sessions
+	 *
+	 * Removes expired honeypot sessions from storage to prevent
+	 * database bloat and maintain performance.
+	 *
+	 * @return int Number of sessions cleaned up
+	 *
+	 * Usage example:
+	 * ```php
+	 * $honeypot = new Honeypot();
+	 * $cleaned = $honeypot->cleanup();
+	 * echo "Cleaned up {$cleaned} expired sessions";
+	 * ```
 	 */
 	public function cleanup(): int {
 		$sessions = $this->storage->read('honeypot_sessions');
@@ -348,6 +517,20 @@ class Honeypot {
 
 	/**
 	 * Get honeypot statistics
+	 *
+	 * Returns comprehensive statistics about honeypot performance
+	 * including total attempts, detection types, and recent activity.
+	 *
+	 * @return array Statistics array with 'total_attempts', 'detection_types', 'recent_attempts'
+	 *
+	 * Usage example:
+	 * ```php
+	 * $honeypot = new Honeypot();
+	 * $stats = $honeypot->getStats();
+	 * echo "Total spam attempts: " . $stats['total_attempts'];
+	 * echo "Recent attempts (24h): " . $stats['recent_attempts'];
+	 * print_r($stats['detection_types']);
+	 * ```
 	 */
 	public function getStats(): array {
 		$spamLog = $this->storage->find('spam_log');
@@ -377,6 +560,21 @@ class Honeypot {
 
 	/**
 	 * Check if honeypot is enabled
+	 *
+	 * Returns the current enabled status of the honeypot system
+	 * based on configuration settings.
+	 *
+	 * @return bool True if honeypot is enabled, false otherwise
+	 *
+	 * Usage example:
+	 * ```php
+	 * $honeypot = new Honeypot();
+	 * if ($honeypot->isEnabled()) {
+	 *     echo $honeypot->initialize('my_form');
+	 * } else {
+	 *     echo "Honeypot protection is disabled";
+	 * }
+	 * ```
 	 */
 	public function isEnabled(): bool {
 		return $this->enabled;

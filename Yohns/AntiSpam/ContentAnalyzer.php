@@ -10,6 +10,16 @@ use Yohns\Security\FileStorage;
  *
  * Provides detailed content analysis including language detection,
  * sentiment analysis, and advanced spam pattern recognition.
+ *
+ * Usage example:
+ * ```
+ * $analyzer = new ContentAnalyzer();
+ * $result = $analyzer->analyzeContent($text);
+ * if ($result['suspicious_score'] > 0.7) {
+ *     echo "Warning: Content is likely spam.";
+ * }
+ * $analyzer->storeAnalysis($text, $result);
+ * ```
  */
 class ContentAnalyzer {
 	private FileStorage $storage;
@@ -28,7 +38,15 @@ class ContentAnalyzer {
 	}
 
 	/**
-	 * Perform comprehensive content analysis
+	 * Perform comprehensive content analysis.
+	 *
+	 * @param string $content The content to analyze.
+	 * @return array Analysis results including language, sentiment, patterns, etc.
+	 *
+	 * Example:
+	 * ```
+	 * $result = $analyzer->analyzeContent($text);
+	 * ```
 	 */
 	public function analyzeContent(string $content): array {
 		$result = [
@@ -54,7 +72,15 @@ class ContentAnalyzer {
 	}
 
 	/**
-	 * Detect the primary language of the content
+	 * Detect the primary language of the content.
+	 *
+	 * @param string $content The content to analyze.
+	 * @return array Array with 'primary', 'confidence', and 'all_scores'.
+	 *
+	 * Example:
+	 * ```
+	 * $lang = $analyzer->detectLanguage($text);
+	 * ```
 	 */
 	public function detectLanguage(string $content): array {
 		$content = strtolower($content);
@@ -91,7 +117,15 @@ class ContentAnalyzer {
 	}
 
 	/**
-	 * Analyze sentiment of the content
+	 * Analyze sentiment of the content.
+	 *
+	 * @param string $content The content to analyze.
+	 * @return array Sentiment analysis result.
+	 *
+	 * Example:
+	 * ```
+	 * $sentiment = $analyzer->analyzeSentiment($text);
+	 * ```
 	 */
 	public function analyzeSentiment(string $content): array {
 		$content = strtolower($content);
@@ -157,7 +191,15 @@ class ContentAnalyzer {
 	}
 
 	/**
-	 * Calculate readability score (simplified Flesch Reading Ease)
+	 * Calculate readability score (simplified Flesch Reading Ease).
+	 *
+	 * @param string $content The content to analyze.
+	 * @return array Readability score and level.
+	 *
+	 * Example:
+	 * ```
+	 * $readability = $analyzer->calculateReadability($text);
+	 * ```
 	 */
 	public function calculateReadability(string $content): array {
 		$sentences = preg_split('/[.!?]+/', $content, -1, PREG_SPLIT_NO_EMPTY);
@@ -208,7 +250,15 @@ class ContentAnalyzer {
 	}
 
 	/**
-	 * Detect suspicious patterns in content
+	 * Detect suspicious patterns in content.
+	 *
+	 * @param string $content The content to analyze.
+	 * @return array Detected patterns with details.
+	 *
+	 * Example:
+	 * ```
+	 * $patterns = $analyzer->detectPatterns($text);
+	 * ```
 	 */
 	public function detectPatterns(string $content): array {
 		$detectedPatterns = [];
@@ -230,7 +280,15 @@ class ContentAnalyzer {
 	}
 
 	/**
-	 * Analyze links in content
+	 * Analyze links in content.
+	 *
+	 * @param string $content The content to analyze.
+	 * @return array Link analysis result.
+	 *
+	 * Example:
+	 * ```
+	 * $links = $analyzer->analyzeLinks($text);
+	 * ```
 	 */
 	public function analyzeLinks(string $content): array {
 		$linkPattern = '/https?:\/\/[^\s<>"\']+/i';
@@ -275,7 +333,15 @@ class ContentAnalyzer {
 	}
 
 	/**
-	 * Analyze formatting patterns
+	 * Analyze formatting patterns.
+	 *
+	 * @param string $content The content to analyze.
+	 * @return array Formatting analysis.
+	 *
+	 * Example:
+	 * ```
+	 * $formatting = $analyzer->analyzeFormatting($text);
+	 * ```
 	 */
 	public function analyzeFormatting(string $content): array {
 		return [
@@ -664,7 +730,16 @@ class ContentAnalyzer {
 	}
 
 	/**
-	 * Store analysis results
+	 * Store analysis results.
+	 *
+	 * @param string $content  The original content.
+	 * @param array  $analysis The analysis result array.
+	 * @return string Inserted record ID or hash.
+	 *
+	 * Example:
+	 * ```
+	 * $analyzer->storeAnalysis($text, $result);
+	 * ```
 	 */
 	public function storeAnalysis(string $content, array $analysis): string {
 		return $this->storage->insert('content_analyses', [

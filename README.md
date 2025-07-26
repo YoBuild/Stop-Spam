@@ -11,7 +11,6 @@ A comprehensive spam prevention and security library for PHP 8.2+ applications. 
 - **Honeypot Fields**: Hidden form fields to catch automated submissions
 - **Content Spam Detection**: AI-powered content analysis with keyword filtering
 - **File-based Storage**: Simple JSON file storage (no database required)
-- **Bootstrap 5.3.7 Integration**: Pre-built responsive UI components
 
 ### 🚀 Advanced Features
 
@@ -34,7 +33,48 @@ composer require yohns/stop-spam
 - PHP 8.2 or higher
 - JSON extension
 - yohns/config ^1.2
-- myjw3b/php-pdo-chainer (for advanced features)
+
+## More Information
+
+### JavaScript Front End Docs and Code
+ [README JavaScript Guide](README-JavaScript-GUIDE.md) - |.:.| - Code: [security-validator.js](public/assets/js/security-validator.js)
+
+### More Reading
+---
+ - [Brief README](README-BRIEF.md)
+ - [In Dept README](README-IN-DEPT.md)
+---
+### Docs for each Class
+* [Yohns\AntiSpam\ContentAnalyzer](docs/AntiSpam/ContentAnalyzer.md)
+  - ContentAnalyzer class for advanced content analysis and pattern detection.
+  - Provides detailed content analysis including language detection, sentiment analysis, and advanced spam pattern recognition.
+* [Yohns\AntiSpam\Honeypot](docs/AntiSpam/Honeypot.md)
+  - Honeypot class for detecting automated bot submissions.
+  - Uses hidden form fields and timing analysis to catch spam bots.
+* [Yohns\AntiSpam\SpamDetector](docs/AntiSpam/SpamDetector.md)
+  - SpamDetector class for comprehensive content spam detection
+  - Analyzes content for spam patterns, keywords, and suspicious behavior. Uses machine learning-style scoring to determine spam likelihood.
+* [Yohns\Security\ContentValidator](docs/Security/ContentValidator.md)
+  - ContentValidator class for sanitizing and validating user input
+  - Provides XSS protection, input sanitization, and content validation. Supports HTML filtering, email validation, URL validation, and comprehensive security threat detection with configurable rules and patterns.
+* [Yohns\Security\CSRFToken](docs/Security/CSRFToken.md)
+  - CSRFToken class for Cross-Site Request Forgery protection
+  - Provides secure token generation and validation to prevent CSRF attacks. Supports multiple storage backends and provides flexible integration options.
+* [Yohns\Security\FileStorage](docs/Security/FileStorage.md)
+  - FileStorage class for managing JSON file-based data storage
+  - This class provides a simple JSON file storage system to replace MySQL for security tokens, rate limits, and spam detection logs. Features automatic cleanup, file locking, and configurable permissions.
+* [Yohns\Security\IPSecurity](docs/Security/IPSecurity.md)
+  - IPSecurity class for IP-based security management
+  - Handles IP whitelisting, blacklisting, geolocation, and reputation tracking. Provides comprehensive IP analysis including proxy detection, threat assessment, and automated security responses.
+* [Yohns\Security\RateLimiter](docs/Security/RateLimiter.md)
+  - RateLimiter class for preventing abuse through rate limiting
+  - Implements progressive timeouts and tracks requests by IP and action type.
+* [Yohns\Security\SecurityManager](docs/Security/SecurityManager.md)
+  - SecurityManager class - Main security coordination class
+  - Coordinates all security components for comprehensive protection. Provides a unified interface for CSRF protection, rate limiting, honeypot anti-spam, content validation, and security monitoring.
+* [Yohns\Security\TokenManager](docs/Security/TokenManager.md)
+  - TokenManager class for managing various types of security tokens
+  - Handles API tokens, session tokens, verification tokens, and more. Provides comprehensive token lifecycle management including generation, validation, expiration, and usage tracking.
 
 ## Quick Start
 
@@ -231,13 +271,6 @@ SecurityValidator.init({
 </script>
 ```
 
-### Bootstrap 5.3.7 Styling
-
-```html
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet">
-<link href="public/assets/css/security-components.css" rel="stylesheet">
-```
-
 ## File Storage Structure
 
 The library uses JSON files for data storage:
@@ -353,6 +386,5 @@ MIT License - see LICENSE file for details.
 ### v1.0.0
 - Initial release
 - Complete security suite with file-based storage
-- Bootstrap 5.3.7 integration
 - Comprehensive JavaScript validation
 - Full documentation and examples

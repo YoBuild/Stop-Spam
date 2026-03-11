@@ -163,33 +163,64 @@ class SpamDetector {
 	}
 
 	/**
+	 * Normalize text to defeat common spam evasion techniques.
+	 *
+	 * Handles leetspeak, character insertion, homoglyphs, and
+	 * zero-width characters.
+	 *
+	 * @param string $content Content to normalize
+	 * @return string Normalized lowercase content
+	 */
+	private function normalizeText(string $content): string {
+		$text = strtolower($content);
+
+		// Remove zero-width characters and invisible Unicode
+		$text = preg_replace('/[\x{200B}-\x{200D}\x{FEFF}\x{00AD}]/u', '', $text);
+
+		// Normalize common leetspeak substitutions
+		$leetMap = [
+			'0' => 'o', '1' => 'i', '3' => 'e', '4' => 'a',
+			'5' => 's', '7' => 't', '8' => 'b', '@' => 'a',
+			'$' => 's', '!' => 'i', '+' => 't',
+		];
+		$text = strtr($text, $leetMap);
+
+		// Remove dots/hyphens/underscores between single characters (v.i.a.g.r.a -> viagra)
+		$text = preg_replace('/\b(\w)[.\-_](?=\w[.\-_]?\w)/u', '$1', $text);
+
+		// Collapse repeated whitespace
+		$text = preg_replace('/\s+/', ' ', $text);
+
+		return $text;
+	}
+
+	/**
 	 * Check for spam keywords
 	 *
-	 * Searches content for known spam keywords and calculates a score
-	 * based on the number of matches. Score is capped at 0.6.
+	 * Searches content for known spam keywords using word-boundary matching
+	 * on normalized text (defeats leetspeak, character insertion, etc.).
+	 * Score is capped at 0.6.
 	 *
 	 * @param string $content Content to check for spam keywords
 	 * @return float Spam score from keyword matches (0.0 to 0.6)
-	 *
-	 * Usage example:
-	 * ```php
-	 * $score = $this->checkSpamKeywords("Buy viagra now!");
-	 * // Returns score based on spam keywords found
-	 * ```
 	 */
 	private function checkSpamKeywords(string $content): float {
-		$content = strtolower($content);
+		$normalized = $this->normalizeText($content);
 		$score = 0.0;
-		$foundKeywords = [];
 
 		foreach ($this->spamKeywords as $keyword) {
-			if (strpos($content, strtolower($keyword)) !== false) {
-				$foundKeywords[] = $keyword;
-				$score += 0.2; // Each keyword adds to score
+			$keyword = strtolower($keyword);
+			// Use word boundaries for single words, strpos for phrases
+			if (strpos($keyword, ' ') !== false) {
+				$found = strpos($normalized, $keyword) !== false;
+			} else {
+				$found = (bool) preg_match('/\b' . preg_quote($keyword, '/') . '\b/', $normalized);
+			}
+			if ($found) {
+				$score += 0.2;
 			}
 		}
 
-		// Cap the score from keywords
 		return min($score, 0.6);
 	}
 
@@ -213,7 +244,8 @@ class SpamDetector {
 		$score = 0.0;
 
 		foreach ($this->profanityList as $word) {
-			if (strpos($content, strtolower($word)) !== false) {
+			$pattern = '/\b' . preg_quote(strtolower($word), '/') . '\b/';
+			if (preg_match($pattern, $content)) {
 				$score += 0.15;
 			}
 		}
@@ -322,30 +354,16 @@ class SpamDetector {
 	private function checkSuspiciousPatterns(string $content): float {
 		$score = 0.0;
 
-		// Check for common spam phrases
-		$spamPhrases = [
-			'click here', 'buy now', 'limited time', 'act now',
-			'free money', 'make money fast', 'work from home',
-			'weight loss', 'lose weight fast', 'miracle cure',
-		];
-
-		$content_lower = strtolower($content);
-		foreach ($spamPhrases as $phrase) {
-			if (strpos($content_lower, $phrase) !== false) {
-				$score += 0.15;
-			}
-		}
-
 		// Check for excessive punctuation
 		$punctuationCount = preg_match_all('/[!?]{2,}/', $content);
 		if ($punctuationCount > 0) {
 			$score += $punctuationCount * 0.1;
 		}
 
-		// Check for suspicious character patterns
-		if (preg_match('/[^\x00-\x7F]/', $content)) {
-			// Contains non-ASCII characters (could be spam in other languages)
-			$score += 0.1;
+		// Check for hidden text techniques (Unicode homoglyphs used to evade filters)
+		if (preg_match('/[\x{0400}-\x{04FF}]/u', $content) && preg_match('/[a-zA-Z]/', $content)) {
+			// Mixed Cyrillic + Latin is a common homoglyph attack
+			$score += 0.2;
 		}
 
 		return min($score, 0.4);
@@ -710,36 +728,10 @@ class SpamDetector {
 	/**
 	 * Get client IP address
 	 *
-	 * Determines the real IP address of the client, handling various
-	 * proxy and forwarding scenarios (CloudFlare, load balancers, etc.).
-	 *
 	 * @return string Client IP address or '0.0.0.0' if unable to determine
-	 *
-	 * Usage example:
-	 * ```php
-	 * $clientIP = $this->getClientIP();
-	 * echo "Request from IP: " . $clientIP;
-	 * // Outputs: Request from IP: 192.168.1.100
-	 * ```
 	 */
 	private function getClientIP(): string {
-		$ipKeys = ['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'HTTP_CLIENT_IP', 'REMOTE_ADDR'];
-
-		foreach ($ipKeys as $key) {
-			if (!empty($_SERVER[$key])) {
-				$ip = $_SERVER[$key];
-				// Handle comma-separated IPs (forwarded)
-				if (strpos($ip, ',') !== false) {
-					$ip = trim(explode(',', $ip)[0]);
-				}
-				// Validate IP
-				if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-					return $ip;
-				}
-			}
-		}
-
-		return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+		return \Yohns\Security\ClientIP::get();
 	}
 
 	/**

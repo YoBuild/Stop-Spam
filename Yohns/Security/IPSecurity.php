@@ -34,13 +34,11 @@ class IPSecurity {
 	private array       $blacklist;
 	private bool        $checkProxies;
 	private int         $maxProxyDepth;
-	private array       $trustedProxies;
-
 	/**
 	 * Constructor - Initialize IP security system with configuration
 	 *
 	 * Sets up IP security with configuration from Config class and loads
-	 * whitelist, blacklist, and trusted proxy data from storage.
+	 * whitelist and blacklist data from storage.
 	 *
 	 * @throws \Exception If FileStorage initialization fails
 	 *
@@ -58,7 +56,6 @@ class IPSecurity {
 
 		$this->loadWhitelist();
 		$this->loadBlacklist();
-		$this->loadTrustedProxies();
 	}
 
 	/**
@@ -177,10 +174,31 @@ class IPSecurity {
 		// Ensure trust score is between 0 and 1
 		$result['trust_score'] = max(0.0, min(1.0, $result['trust_score']));
 
-		// Auto-block if trust score is too low
-		if ($result['trust_score'] < 0.2) {
+		return $result;
+	}
+
+	/**
+	 * Analyze IP and enforce blocking policy
+	 *
+	 * Calls analyzeIP() and auto-blacklists the IP if the trust score
+	 * is below the threshold. Use this when you want analysis + enforcement.
+	 * Use analyzeIP() alone when you only want to read without side effects.
+	 *
+	 * @param string|null $ipAddress  IP address to analyze (null uses client IP)
+	 * @param float       $threshold  Trust score threshold for auto-blocking (default 0.2)
+	 * @param int         $duration   Block duration in seconds (default 3600)
+	 * @return array Complete security analysis (same as analyzeIP)
+	 */
+	public function enforcePolicy(string $ipAddress = null, float $threshold = 0.2, int $duration = 3600): array {
+		$result = $this->analyzeIP($ipAddress);
+
+		if ($result['trust_score'] < $threshold && !$result['is_whitelisted']) {
 			$result['is_blocked'] = true;
-			$this->addToBlacklist($ip, 'Auto-blocked due to low trust score', 3600); // 1 hour
+			$this->addToBlacklist(
+				$result['ip_address'],
+				'Auto-blocked due to low trust score (' . $result['trust_score'] . ')',
+				$duration
+			);
 		}
 
 		return $result;
@@ -203,89 +221,17 @@ class IPSecurity {
 	 * ```
 	 */
 	public function getClientIP(): string {
-		$ipKeys = [
-			'HTTP_CF_CONNECTING_IP',     // Cloudflare
-			'HTTP_X_FORWARDED_FOR',      // Standard proxy header
-			'HTTP_X_REAL_IP',            // Nginx proxy
-			'HTTP_X_CLIENT_IP',          // Apache mod_remoteip
-			'HTTP_X_CLUSTER_CLIENT_IP',  // Cluster environments
-			'HTTP_FORWARDED',            // RFC 7239
-			'REMOTE_ADDR'                // Default
-		];
-
-		foreach ($ipKeys as $key) {
-			if (!empty($_SERVER[$key])) {
-				$ips = explode(',', $_SERVER[$key]);
-
-				foreach ($ips as $ip) {
-					$ip = trim($ip);
-
-					// Validate IP and check if it's not private/reserved
-					if ($this->isValidPublicIP($ip)) {
-						return $ip;
-					}
-				}
-			}
-		}
-
-		return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+		return ClientIP::get();
 	}
 
 	/**
-	 * Check if IP is valid and public
+	 * Check if IP falls within a CIDR range
 	 *
-	 * Validates IP format and checks if it's a public IP address or
-	 * if it's from a trusted proxy source.
+	 * Supports both IPv4 and IPv6 addresses with CIDR notation.
 	 *
-	 * @param string $ip IP address to validate
-	 * @return bool True if IP is valid and public/trusted, false otherwise
-	 *
-	 * Usage example:
-	 * ```php
-	 * if ($this->isValidPublicIP('192.168.1.1')) {
-	 *     // Process as valid IP
-	 * } else {
-	 *     // Invalid or private IP
-	 * }
-	 * ```
-	 */
-	private function isValidPublicIP(string $ip): bool {
-		if (!filter_var($ip, FILTER_VALIDATE_IP)) {
-			return false;
-		}
-
-		// Allow private IPs if they're from trusted proxies
-		if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-			return true;
-		}
-
-		// Check if it's from a trusted proxy
-		foreach ($this->trustedProxies as $proxy) {
-			if ($this->ipInRange($ip, $proxy)) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Check if IP is valid and public
-	 *
-	 * Validates IP format and checks if it's a public IP address or
-	 * if it's from a trusted proxy source.
-	 *
-	 * @param string $ip IP address to validate
-	 * @return bool True if IP is valid and public/trusted, false otherwise
-	 *
-	 * Usage example:
-	 * ```php
-	 * if ($this->isValidPublicIP('192.168.1.1')) {
-	 *     // Process as valid IP
-	 * } else {
-	 *     // Invalid or private IP
-	 * }
-	 * ```
+	 * @param string $ip    IP address to check
+	 * @param string $range IP or CIDR range to check against
+	 * @return bool True if IP is within the range, false otherwise
 	 */
 	private function ipInRange(string $ip, string $range): bool {
 		if (strpos($range, '/') === false) {
@@ -293,15 +239,44 @@ class IPSecurity {
 		}
 
 		[$subnet, $bits] = explode('/', $range);
+		$bits = (int) $bits;
 
+		// IPv4
 		if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-			$ip = ip2long($ip);
-			$subnet = ip2long($subnet);
-			$mask = -1 << (32 - (int) $bits);
-			return ($ip & $mask) === ($subnet & $mask);
+			$ipLong = ip2long($ip);
+			$subnetLong = ip2long($subnet);
+			if ($ipLong === false || $subnetLong === false) {
+				return false;
+			}
+			$mask = -1 << (32 - $bits);
+			return ($ipLong & $mask) === ($subnetLong & $mask);
 		}
 
-		// IPv6 support would go here
+		// IPv6
+		if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+			$ipBin = inet_pton($ip);
+			$subnetBin = inet_pton($subnet);
+			if ($ipBin === false || $subnetBin === false) {
+				return false;
+			}
+
+			$fullBytes = intdiv($bits, 8);
+			$remainingBits = $bits % 8;
+
+			if (substr($ipBin, 0, $fullBytes) !== substr($subnetBin, 0, $fullBytes)) {
+				return false;
+			}
+
+			if ($remainingBits > 0 && $fullBytes < 16) {
+				$mask = 0xFF << (8 - $remainingBits) & 0xFF;
+				if ((ord($ipBin[$fullBytes]) & $mask) !== (ord($subnetBin[$fullBytes]) & $mask)) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
 		return false;
 	}
 
@@ -971,29 +946,6 @@ class IPSecurity {
 		foreach ($configBlacklist as $ip) {
 			$this->blacklist[] = ['ip_range' => $ip, 'reason' => 'Config blacklist'];
 		}
-	}
-
-	/**
-	 * Load trusted proxies
-	 *
-	 * Loads list of trusted proxy IP ranges from configuration
-	 * for handling legitimate proxy scenarios.
-	 *
-	 * @return void
-	 *
-	 * Usage example:
-	 * ```php
-	 * $this->loadTrustedProxies();
-	 * // Trusted proxy list loaded from configuration
-	 * ```
-	 */
-	private function loadTrustedProxies(): void {
-		$this->trustedProxies = Config::get('ip_security.trusted_proxies', 'security') ?: [
-			'127.0.0.1',
-			'10.0.0.0/8',
-			'172.16.0.0/12',
-			'192.168.0.0/16',
-		];
 	}
 
 	/**

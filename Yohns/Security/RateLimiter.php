@@ -69,23 +69,13 @@ class RateLimiter {
 			return true;
 		}
 
-		// Get or create rate limit record
+		// Get rate limit record
 		$rateLimit = $this->storage->findOne('rate_limits', [
 			'identifier'  => $identifier,
 			'action_type' => $actionType,
 		]);
 
 		if (!$rateLimit) {
-			// Create new rate limit record
-			$this->storage->insert('rate_limits', [
-				'identifier'         => $identifier,
-				'action_type'        => $actionType,
-				'request_count'      => 1,
-				'first_request_time' => $now,
-				'last_request_time'  => $now,
-				'blocked_until'      => null,
-				'violation_count'    => 0,
-			]);
 			return false;
 		}
 
@@ -94,13 +84,8 @@ class RateLimiter {
 		$timeWindow = $limits['time_window'];
 		$maxRequests = $limits['max_requests'];
 
-		// Reset counter if time window has passed
+		// Window expired — not limited
 		if (($now - $rateLimit['first_request_time']) > $timeWindow) {
-			$this->storage->update('rate_limits', $rateLimit['id'], [
-				'request_count'      => 1,
-				'first_request_time' => $now,
-				'last_request_time'  => $now,
-			]);
 			return false;
 		}
 
@@ -109,12 +94,6 @@ class RateLimiter {
 			$this->blockUser($identifier, $actionType, $rateLimit);
 			return true;
 		}
-
-		// Increment request count
-		$this->storage->update('rate_limits', $rateLimit['id'], [
-			'request_count'     => $rateLimit['request_count'] + 1,
-			'last_request_time' => $now,
-		]);
 
 		return false;
 	}
@@ -347,23 +326,7 @@ class RateLimiter {
 	 * Get client IP address
 	 */
 	private function getClientIP(): string {
-		$ipKeys = ['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'HTTP_CLIENT_IP', 'REMOTE_ADDR'];
-
-		foreach ($ipKeys as $key) {
-			if (!empty($_SERVER[$key])) {
-				$ip = $_SERVER[$key];
-				// Handle comma-separated IPs (forwarded)
-				if (strpos($ip, ',') !== false) {
-					$ip = trim(explode(',', $ip)[0]);
-				}
-				// Validate IP
-				if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-					return $ip;
-				}
-			}
-		}
-
-		return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+		return ClientIP::get();
 	}
 
 	/**

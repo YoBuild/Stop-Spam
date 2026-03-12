@@ -1,545 +1,268 @@
-# Yohns\Security\FileStorage
+# FileStorage
 
-FileStorage class for managing JSON file-based data storage
+**Class:** `Yohns\Security\FileStorage`
+**File:** `Yohns/Security/FileStorage.php`
 
-This class provides a simple JSON file storage system to replace MySQL
-for security tokens, rate limits, and spam detection logs. Features
-automatic cleanup, file locking, and configurable permissions.
+JSON file-based persistence layer used by every component in the library. Each "table" is a single `.json` file in the storage directory. No database required.
 
-Usage example:
+## Config
+
+All values come from the `storage` section of `config/security.php`:
+
+| Key                     | Default                      | Description                                                 |
+|-------------------------|------------------------------|-------------------------------------------------------------|
+| `type`                  | `'json'`                     | Storage type identifier (currently only `json` supported).  |
+| `directory`             | `__DIR__ . '/../database'`   | Absolute path to the storage directory.                     |
+| `file_permissions`      | `0664`                       | Permissions set on JSON files after write (`chmod`).        |
+| `directory_permissions` | `0755`                       | Permissions used when creating the storage directory.       |
+| `auto_cleanup`          | `true`                       | Whether to auto-clean expired records during `read()`.      |
+| `cleanup_interval`      | `3600`                       | Minimum seconds between automatic cleanups per table.       |
+
 ```php
+// config/security.php
+'storage' => [
+	'type'                  => 'json',
+	'directory'             => __DIR__ . '/../database',
+	'file_permissions'      => 0664,
+	'directory_permissions' => 0755,
+	'auto_cleanup'          => true,
+	'cleanup_interval'      => 3600,
+],
+```
+
+## Basic CRUD
+
+### Insert
+
+```php
+<?php
+use Yohns\Security\FileStorage;
+
 $storage = new FileStorage();
-// Insert a record
-$id = $storage->insert('users', ['name' => 'John', 'email' => 'john@example.com']);
-// Find records
 
-$users = $storage->find('users', ['name' => 'John']);
-// Update a record
-$storage->update('users', $id, ['email' => 'newemail@example.com']);
+$id = $storage->insert('audit_log', [
+	'action'  => 'login',
+	'user_id' => 42,
+	'ip'      => '203.0.113.50',
+]);
+// $id = '3f8a1b2c4d5e6f7a8b9c0d1e2f3a4b5c' (32-char hex string)
 ```
 
+The stored record includes auto-generated fields:
 
-
-## Methods
-
-| Name | Description |
-|------|-------------|
-|[__construct](#filestorage__construct)|Constructor - Initialize file storage with configuration|
-|[cleanup](#filestoragecleanup)|Manually trigger cleanup for all tables|
-|[clear](#filestorageclear)|Clear all records from a table|
-|[count](#filestoragecount)|Count records in a table|
-|[delete](#filestoragedelete)|Delete a record from a table|
-|[find](#filestoragefind)|Find records in a table by criteria|
-|[findOne](#filestoragefindone)|Find a single record in a table by criteria|
-|[getStats](#filestoragegetstats)|Get storage statistics|
-|[insert](#filestorageinsert)|Insert a record into a table|
-|[read](#filestorageread)|Read data from a JSON file|
-|[update](#filestorageupdate)|Update a record in a table|
-|[write](#filestoragewrite)|Write data to a JSON file|
-
-
-
-
-### FileStorage::__construct
-
-**Description**
-
-```php
-public __construct (void)
+```json
+{
+	"id": "3f8a1b2c4d5e6f7a8b9c0d1e2f3a4b5c",
+	"action": "login",
+	"user_id": 42,
+	"ip": "203.0.113.50",
+	"created_at": 1710100000,
+	"updated_at": 1710100000
+}
 ```
 
-Constructor - Initialize file storage with configuration
+### Read All Records
 
-Sets up the file storage system with configuration from Config class.
-Creates storage directory if it doesn't exist and validates permissions.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`void`
-
-
-**Throws Exceptions**
-
-
-`\RuntimeException`
-> If storage directory cannot be created or is not writable
-
-Usage example:
 ```php
-$storage = new FileStorage();
-// Storage is now ready to use
+$records = $storage->read('audit_log');
+// Returns associative array keyed by ID:
+// [
+//     '3f8a1b2c...' => ['id' => '3f8a1b2c...', 'action' => 'login', ...],
+//     'b7c8d9e0...' => ['id' => 'b7c8d9e0...', 'action' => 'logout', ...],
+// ]
 ```
 
-<hr />
-
-
-### FileStorage::cleanup
-
-**Description**
+### Update
 
 ```php
-public cleanup (void)
+$success = $storage->update('audit_log', $id, [
+	'resolved' => true,
+	'notes'    => 'Reviewed by admin',
+]);
+// true if the record exists, false if not found
+// 'updated_at' is automatically set to current time
 ```
 
-Manually trigger cleanup for all tables
+### Delete
 
-Performs cleanup operations on all known table types to remove
-expired records and free up storage space.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`void`
-
->
-
-Usage example:
 ```php
-$storage = new FileStorage();
+$deleted = $storage->delete('audit_log', $id);
+// true if deleted, false if the ID was not found
+```
+
+## Finding Records
+
+### `find(string $table, array $criteria = []): array`
+
+Returns all matching records as a re-indexed array. Uses exact matching on all criteria fields.
+
+```php
+// All login events from a specific IP
+$logins = $storage->find('audit_log', [
+	'action' => 'login',
+	'ip'     => '203.0.113.50',
+]);
+// [
+//     ['id' => '3f8a1b2c...', 'action' => 'login', 'ip' => '203.0.113.50', ...],
+//     ['id' => 'e4f5a6b7...', 'action' => 'login', 'ip' => '203.0.113.50', ...],
+// ]
+
+// All records (no criteria)
+$all = $storage->find('audit_log');
+```
+
+### `findOne(string $table, array $criteria): ?array`
+
+Returns the first matching record, or `null`.
+
+```php
+$record = $storage->findOne('audit_log', ['user_id' => 42]);
+// ['id' => '3f8a1b2c...', 'action' => 'login', 'user_id' => 42, ...] or null
+```
+
+### `count(string $table, array $criteria = []): int`
+
+Returns the count of matching records.
+
+```php
+$totalLogins = $storage->count('audit_log', ['action' => 'login']);
+// 15
+$totalRecords = $storage->count('audit_log');
+// 42
+```
+
+## Bulk Operations
+
+### `write(string $table, array $data): bool`
+
+Overwrites the entire table with the given data. Used internally by `insert()`, `update()`, and `delete()`. You can use it directly to replace all records at once.
+
+```php
+$storage->write('cache', [
+	'key1' => ['value' => 'hello', 'expires_at' => time() + 300],
+	'key2' => ['value' => 'world', 'expires_at' => time() + 300],
+]);
+```
+
+### `clear(string $table): bool`
+
+Removes all records from a table (writes an empty array).
+
+```php
+$storage->clear('temp_data');
+// The file still exists but contains: {}
+```
+
+## Cleanup
+
+### Automatic Cleanup
+
+When `auto_cleanup` is `true`, `read()` checks whether enough time has passed since the last cleanup for that table (controlled by `cleanup_interval`). If so, it removes expired records based on table-specific rules:
+
+| Table              | Retention Rule                                    |
+|--------------------|---------------------------------------------------|
+| `csrf_tokens`      | Removed when `expires_at` is in the past          |
+| `rate_limits`      | Removed when `last_request` is older than 2x `cleanup_interval` |
+| `spam_log`         | Removed when `created_at` is older than 30 days   |
+| `security_tokens`  | Removed when `expires_at` is in the past          |
+| Any other table    | Never auto-cleaned                                |
+
+The cleanup interval is tracked per table in a static property. This means cleanup runs at most once per `cleanup_interval` seconds per table, not on every `read()`.
+
+### Manual Cleanup
+
+```php
 $storage->cleanup();
-echo "All tables cleaned up successfully";
-// Run this periodically via cron job
+// Runs cleanup on: csrf_tokens, rate_limits, spam_log, security_tokens
+// Skips tables whose JSON files don't exist
 ```
 
-
-<hr />
-
-
-### FileStorage::clear
-
-**Description**
+## Storage Statistics
 
 ```php
-public clear (string $table)
-```
-
-Clear all records from a table
-
-Removes all records from the specified table, effectively
-resetting it to an empty state. This operation cannot be undone.
-
-**Parameters**
-
-* `(string) $table`
-: Table name to clear
-
-**Return Values**
-
-`bool`
-
-> True on success
-
-
-**Throws Exceptions**
-
-
-`\RuntimeException`
-> If write operation fails
-
-Usage example:
-```php
-$storage = new FileStorage();
-if ($storage->clear('temp_data')) {
-    echo "Temporary data cleared successfully";
-}
-// Warning: This will delete ALL records in the table
-```
-
-<hr />
-
-
-### FileStorage::count
-
-**Description**
-
-```php
-public count (string $table, array $criteria)
-```
-
-Count records in a table
-
-Returns the number of records matching the specified criteria.
-Counts all records if no criteria provided.
-
-**Parameters**
-
-* `(string) $table`
-: Table name to count records in
-* `(array) $criteria`
-: Key-value pairs for filtering records
-
-**Return Values**
-
-`int`
-
-> Number of matching records
-
-Usage example:
-```php
-$storage = new FileStorage();
-$totalUsers = $storage->count('users');
-$activeUsers = $storage->count('users', ['status' => 'active']);
-echo "Total users: {$totalUsers}, Active: {$activeUsers}";
-```
-
-
-<hr />
-
-
-### FileStorage::delete
-
-**Description**
-
-```php
-public delete (string $table, string $id)
-```
-
-Delete a record from a table
-
-Removes the specified record from the table permanently.
-This operation cannot be undone.
-
-**Parameters**
-
-* `(string) $table`
-: Table name containing the record
-* `(string) $id`
-: ID of record to delete
-
-**Return Values**
-
-`bool`
-
-> True if record was deleted, false if record not found
-
-
-**Throws Exceptions**
-
-
-`\RuntimeException`
-> If write operation fails
-
-Usage example:
-```php
-$storage = new FileStorage();
-if ($storage->delete('users', $userId)) {
-    echo "User deleted successfully";
-} else {
-    echo "User not found";
-}
-```
-
-<hr />
-
-
-### FileStorage::find
-
-**Description**
-
-```php
-public find (string $table, array $criteria)
-```
-
-Find records in a table by criteria
-
-Searches for records matching the specified criteria using exact matching.
-Returns all records if no criteria provided.
-
-**Parameters**
-
-* `(string) $table`
-: Table name to search in
-* `(array) $criteria`
-: Key-value pairs for filtering records
-
-**Return Values**
-
-`array`
-
-> Array of matching records (re-indexed)
-
-Usage example:
-```php
-$storage = new FileStorage();
-// Find all active users
-$activeUsers = $storage->find('users', ['status' => 'active']);
-// Find all records
-$allUsers = $storage->find('users');
-foreach ($activeUsers as $user) {
-    echo "Active user: " . $user['name'] . "\n";
-}
-```
-
-
-<hr />
-
-
-### FileStorage::findOne
-
-**Description**
-
-```php
-public findOne (string $table, array $criteria)
-```
-
-Find a single record in a table by criteria
-
-Returns the first record matching the specified criteria,
-or null if no matching record is found.
-
-**Parameters**
-
-* `(string) $table`
-: Table name to search in
-* `(array) $criteria`
-: Key-value pairs for filtering records
-
-**Return Values**
-
-`array|null`
-
-> First matching record or null if not found
-
-Usage example:
-```php
-$storage = new FileStorage();
-$user = $storage->findOne('users', ['email' => 'john@example.com']);
-if ($user) {
-    echo "Found user: " . $user['name'];
-} else {
-    echo "User not found";
-}
-```
-
-
-<hr />
-
-
-### FileStorage::getStats
-
-**Description**
-
-```php
-public getStats (void)
-```
-
-Get storage statistics
-
-Returns comprehensive statistics about the storage system including
-table information, record counts, and file sizes.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`array`
-
-> Statistics array with storage directory, tables info, totals
-
-Usage example:
-```php
-$storage = new FileStorage();
 $stats = $storage->getStats();
-echo "Storage directory: " . $stats['storage_directory'];
-echo "Total records: " . $stats['total_records'];
-echo "Total size: " . $stats['total_size'] . " bytes";
-foreach ($stats['tables'] as $table => $info) {
-    echo "Table {$table}: {$info['records']} records, {$info['size']} bytes";
+// [
+//     'storage_directory' => '/var/www/app/database',
+//     'tables' => [
+//         'csrf_tokens' => [
+//             'records' => 38,
+//             'size'    => 12480,
+//             'file'    => '/var/www/app/database/csrf_tokens.json',
+//         ],
+//         'rate_limits' => [
+//             'records' => 156,
+//             'size'    => 45200,
+//             'file'    => '/var/www/app/database/rate_limits.json',
+//         ],
+//     ],
+//     'total_records' => 194,
+//     'total_size'    => 57680,
+// ]
+```
+
+## Security Features
+
+### Table Name Validation
+
+Table names are validated against the regex `^[a-zA-Z0-9_-]+$`. This prevents path traversal attacks:
+
+```php
+// These work
+$storage->read('csrf_tokens');
+$storage->read('rate-limits');
+$storage->read('my_table_2');
+
+// These throw InvalidArgumentException
+$storage->read('../etc/passwd');    // InvalidArgumentException
+$storage->read('../../secrets');    // InvalidArgumentException
+$storage->read('table name');      // InvalidArgumentException (spaces)
+$storage->read('table.name');      // InvalidArgumentException (dots)
+```
+
+### Cryptographically Secure IDs
+
+Record IDs are generated with `bin2hex(random_bytes(16))`, producing 32-character hex strings. This is cryptographically secure and unpredictable, unlike `uniqid()` which is based on the current timestamp and can be guessed.
+
+### Atomic Writes
+
+`write()` uses `file_put_contents()` with the `LOCK_EX` flag, which acquires an exclusive lock before writing. This prevents corruption when multiple PHP processes write to the same file simultaneously.
+
+### File Permissions
+
+After every write, `chmod()` is called with the configured `file_permissions` (default `0664`). This ensures new files don't inherit overly permissive umask settings.
+
+## File Format
+
+Each table is stored as `{table_name}.json` in the storage directory. The file contains a JSON object keyed by record ID:
+
+```json
+{
+	"3f8a1b2c4d5e6f7a8b9c0d1e2f3a4b5c": {
+		"id": "3f8a1b2c4d5e6f7a8b9c0d1e2f3a4b5c",
+		"token": "abc123...",
+		"context": "login_form",
+		"expires_at": 1710101800,
+		"created_at": 1710100000,
+		"updated_at": 1710100000
+	},
+	"b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2": {
+		"id": "b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+		"token": "def456...",
+		"context": "settings_form",
+		"expires_at": 1710101900,
+		"created_at": 1710100100,
+		"updated_at": 1710100100
+	}
 }
 ```
 
-
-<hr />
-
-
-### FileStorage::insert
-
-**Description**
-
-```php
-public insert (string $table, array $record)
-```
-
-Insert a record into a table
-
-Adds a new record to the specified table with auto-generated ID
-and timestamps. Returns the generated ID for future reference.
-
-**Parameters**
-
-* `(string) $table`
-: Table name to insert into
-* `(array) $record`
-: Record data to insert
-
-**Return Values**
-
-`string`
-
-> Generated unique ID for the inserted record
-
-
-**Throws Exceptions**
-
-
-`\RuntimeException`
-> If write operation fails
-
-Usage example:
-```php
-$storage = new FileStorage();
-$id = $storage->insert('users', [
-    'name' => 'John Doe',
-    'email' => 'john@example.com',
-    'role' => 'admin'
-]);
-echo "User created with ID: " . $id;
-```
-
-<hr />
-
-
-### FileStorage::read
-
-**Description**
-
-```php
-public read (string $table)
-```
-
-Read data from a JSON file
-
-Loads and parses JSON data from the specified table file.
-Performs automatic cleanup if enabled and validates JSON format.
-
-**Parameters**
-
-* `(string) $table`
-: Table name to read data from
-
-**Return Values**
-
-`array`
-
-> Array of records from the table
-
-
-**Throws Exceptions**
-
-
-`\RuntimeException`
-> If file cannot be read or contains invalid JSON
-
-Usage example:
-```php
-$storage = new FileStorage();
-$users = $storage->read('users');
-foreach ($users as $id => $user) {
-    echo "User: " . $user['name'] . "\n";
-}
-```
-
-<hr />
-
-
-### FileStorage::update
-
-**Description**
-
-```php
-public update (string $table, string $id, array $updates)
-```
-
-Update a record in a table
-
-Updates an existing record by merging new data with existing record.
-Automatically updates the 'updated_at' timestamp.
-
-**Parameters**
-
-* `(string) $table`
-: Table name containing the record
-* `(string) $id`
-: ID of record to update
-* `(array) $updates`
-: Array of fields to update
-
-**Return Values**
-
-`bool`
-
-> True if record was updated, false if record not found
-
-
-**Throws Exceptions**
-
-
-`\RuntimeException`
-> If write operation fails
-
-Usage example:
-```php
-$storage = new FileStorage();
-$success = $storage->update('users', $userId, [
-    'email' => 'newemail@example.com',
-    'last_login' => time()
-]);
-if ($success) {
-    echo "User updated successfully";
-}
-```
-
-<hr />
-
-
-### FileStorage::write
-
-**Description**
-
-```php
-public write (string $table, array $data)
-```
-
-Write data to a JSON file
-
-Saves data array to the specified table file as formatted JSON.
-Uses file locking to prevent corruption and sets proper permissions.
-
-**Parameters**
-
-* `(string) $table`
-: Table name to write data to
-* `(array) $data`
-: Data array to save
-
-**Return Values**
-
-`bool`
-
-> True on success
-
-
-**Throws Exceptions**
-
-
-`\RuntimeException`
-> If JSON encoding fails or file cannot be written
-
-Usage example:
-```php
-$storage = new FileStorage();
-$data = ['user1' => ['name' => 'John'], 'user2' => ['name' => 'Jane']];
-$storage->write('users', $data);
-echo "Data saved successfully";
-```
-
-<hr />
+JSON is formatted with `JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES` for readability and to avoid double-escaping URLs.
+
+## Gotchas
+
+- **`read()` returns ID-keyed associative array, `find()` returns re-indexed numeric array.** Use `read()` when you need to look up by ID. Use `find()` when you need to search by field values.
+- **`find()` uses exact matching only.** There is no support for greater-than, less-than, LIKE, or regex matching. For complex queries, use `read()` and filter the results yourself.
+- **Constructor throws on bad directory.** If the storage directory cannot be created or is not writable, the constructor throws `RuntimeException`. This will crash any class that creates a `FileStorage` instance (which is all of them).
+- **Cleanup interval is per-process.** The `$lastCleanup` tracker is a static property. In long-running processes (e.g., Swoole, ReactPHP), cleanup runs once per interval as expected. In traditional PHP-FPM, each request is a new process, so the static is reset -- but cleanup still won't run more than once per request per table.
+- **No schema enforcement.** You can insert any array of data into any table. There is no validation that fields match a schema. If you insert a record missing `expires_at`, the cleanup logic will treat `$record['expires_at'] ?? 0` as epoch zero and immediately clean it up.
+- **JSON file size.** All records in a table are loaded into memory on every `read()`. For tables with thousands of records, this can consume significant memory. The cleanup mechanism helps keep table sizes manageable.

@@ -26,7 +26,7 @@ $spamDetector = new SpamDetector();
 $contentAnalyzer = new ContentAnalyzer();
 
 // Handle admin actions first, before any output
-$action = $_POST['action'] ?? $_GET['action'] ?? '';
+$action = $_POST['action'] ?? '';
 $message = '';
 $alertClass = 'alert-info';
 

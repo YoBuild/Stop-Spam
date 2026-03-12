@@ -1,26 +1,25 @@
-# Yohns
+# Yohns Stop-Spam Documentation
 
-### JavaScript Front End Docs and Code
- [README JavaScript Guide](../README-JavaScript-GUIDE.md) - |.:.| - Code: [security-validator.js](../public/assets/js/security-validator.js)
+### JavaScript Front End
+[README JavaScript Guide](../README-JavaScript-GUIDE.md) | Code: [security-validator.js](../public/assets/js/security-validator.js)
 
 ### More Reading
----
- - [Brief README](../README-BRIEF.md)
- - [In Dept README](../README-IN-DEPT.md)
+- [Brief README](../README-BRIEF.md)
+- [In Depth README](../README-IN-DEPT.md)
 
+## Security Classes
 
-## Code Docs
+* [Security\ClientIP](Security/ClientIP.md) — Shared IP detection with trusted proxy gate
+* [Security\SecurityManager](Security/SecurityManager.md) — Orchestrator for all components
+* [Security\CSRFToken](Security/CSRFToken.md) — CSRF protection (session + file + cookie)
+* [Security\RateLimiter](Security/RateLimiter.md) — Rate limiting with progressive timeouts
+* [Security\IPSecurity](Security/IPSecurity.md) — IP whitelist/blacklist and reputation
+* [Security\ContentValidator](Security/ContentValidator.md) — Input sanitization and XSS protection
+* [Security\TokenManager](Security/TokenManager.md) — API/verification/reset token lifecycle
+* [Security\FileStorage](Security/FileStorage.md) — JSON file persistence layer
 
-* [AntiSpam\ContentAnalyzer](AntiSpam\ContentAnalyzer.md)
-* [AntiSpam\Honeypot](AntiSpam\Honeypot.md)
-* [AntiSpam\SpamDetector](AntiSpam\SpamDetector.md)
+## AntiSpam Classes
 
-
-&nbsp;
-* [Security\ContentValidator](Security\ContentValidator.md)
-* [Security\CSRFToken](Security\CSRFToken.md)
-* [Security\FileStorage](Security\FileStorage.md)
-* [Security\IPSecurity](Security\IPSecurity.md)
-* [Security\RateLimiter](Security\RateLimiter.md)
-* [Security\SecurityManager](Security\SecurityManager.md)
-* [Security\TokenManager](Security\TokenManager.md)
+* [AntiSpam\Honeypot](AntiSpam/Honeypot.md) — Bot detection via hidden fields and timing
+* [AntiSpam\SpamDetector](AntiSpam/SpamDetector.md) — Content spam scoring via keywords/patterns
+* [AntiSpam\ContentAnalyzer](AntiSpam/ContentAnalyzer.md) — Sentiment, readability, language detection

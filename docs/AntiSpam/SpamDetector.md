@@ -1,532 +1,246 @@
 # Yohns\AntiSpam\SpamDetector
 
-SpamDetector class for comprehensive content spam detection
+Content spam scoring via keywords, profanity, link analysis, and suspicious pattern detection. Assigns a score from 0.0 to 1.0 and flags content as spam when the score reaches 0.5 or higher.
 
-Analyzes content for spam patterns, keywords, and suspicious behavior.
-Uses machine learning-style scoring to determine spam likelihood.
+Uses `\Yohns\Security\ClientIP::get()` for IP detection.
+Logs detected spam to the `spam_log` storage table.
+Persists keyword and profanity lists in `FileStorage` (`spam_keywords` and `profanity_list` tables).
 
+## Configuration
 
-Usage example:
-```php
-$detector = new SpamDetector();
-$result = $detector->analyzeContent("Buy cheap viagra now!!!");
-if ($result['is_spam']) {
-  echo "Spam detected with score: " . $result['spam_score'];
-  echo "Reasons: " . implode(', ', $result['reasons']);
-}
-```
+All values come from the `spam_detection` section in `config/security.php`:
+
+| Key                    | Default | Description                                          |
+|------------------------|---------|------------------------------------------------------|
+| `enabled`              | `true`  | Master switch for spam detection                     |
+| `log_enabled`          | `true`  | Whether to log detected spam to `spam_log`           |
+| `max_links`            | `3`     | URLs allowed before link score kicks in              |
+| `max_capitals_percent` | `70`    | Percentage of capital letters before capitals score kicks in |
+| `max_repeated_chars`   | `5`     | Consecutive identical characters before repeated-chars score kicks in |
 
 ## Methods
 
-| Name | Description |
-|------|-------------|
-|[__construct](#spamdetector__construct)|Constructor - Initialize spam detector with configuration|
-|[addProfanityWord](#spamdetectoraddprofanityword)|Add profanity word|
-|[addSpamKeyword](#spamdetectoraddspamkeyword)|Add spam keyword|
-|[analyzeContent](#spamdetectoranalyzecontent)|Analyze content for spam indicators|
-|[cleanContent](#spamdetectorcleancontent)|Clean content by removing spam and profanity|
-|[getProfanityList](#spamdetectorgetprofanitylist)|Get profanity list|
-|[getSpamKeywords](#spamdetectorgetspamkeywords)|Get spam keywords|
-|[getStats](#spamdetectorgetstats)|Get spam detection statistics|
-|[isEnabled](#spamdetectorisenabled)|Check if spam detection is enabled|
-|[removeProfanityWord](#spamdetectorremoveprofanityword)|Remove profanity word|
-|[removeSpamKeyword](#spamdetectorremovespamkeyword)|Remove spam keyword|
-|[shouldAutoBlock](#spamdetectorshouldautoblock)|Check if content should be auto-blocked|
-|[trainWithFeedback](#spamdetectortrainwithfeedback)|Train the spam detector with user feedback|
+### `analyzeContent(string $content): array`
 
+Runs all checks against the content and returns a detailed result.
 
+**Checks performed (each contributes to the total score):**
 
+| Check                | Max score | What it catches                                       |
+|----------------------|-----------|-------------------------------------------------------|
+| Spam keywords        | 0.6       | +0.2 per matched keyword from the keywords list       |
+| Profanity            | 0.4       | +0.15 per matched profanity word                      |
+| Excessive links      | 0.5       | +0.2 per link beyond `max_links` (3)                  |
+| Excessive capitals   | 0.4       | Score based on how far above `max_capitals_percent` (70%) |
+| Repeated characters  | 0.3       | +0.1 per occurrence of 5+ identical chars in a row    |
+| Suspicious patterns  | 0.4       | Excessive punctuation (`!!`, `???`) and Cyrillic+Latin mixed script |
 
-### SpamDetector::__construct
+**Severity thresholds:**
 
-**Description**
+| Score range | `is_spam` | `severity` |
+|-------------|-----------|------------|
+| 0.0 -- 0.29 | `false`  | `low`      |
+| 0.3 -- 0.49 | `false`  | `low`      |
+| 0.5 -- 0.79 | `true`   | `medium`   |
+| 0.8 -- 1.0  | `true`   | `high`     |
+
+**Return value:**
 
 ```php
-public __construct (void)
+[
+	'is_spam'    => false,     // bool
+	'spam_score' => 0.0,      // float 0.0-1.0
+	'reasons'    => [],       // array of human-readable reason strings
+	'severity'   => 'low',    // 'low', 'medium', or 'high'
+]
 ```
 
-Constructor - Initialize spam detector with configuration
+**Example -- clean content:**
 
-Loads configuration settings and initializes spam keywords and profanity lists
-from storage or creates default lists if none exist.
+```php
+<?php
+use Yohns\AntiSpam\SpamDetector;
 
-**Parameters**
+$detector = new SpamDetector();
 
-`This function has no parameters.`
+$result = $detector->analyzeContent('Hello, I would like to ask about your services.');
+// $result = [
+//     'is_spam'    => false,
+//     'spam_score' => 0.0,
+//     'reasons'    => [],
+//     'severity'   => 'low',
+// ]
+```
 
-**Return Values**
+**Example -- obvious spam:**
 
-`void`
+```php
+$result = $detector->analyzeContent(
+	'BUY CHEAP VIAGRA NOW!!! Click here for FREE MONEY!!! ' .
+	'Visit http://spam1.com http://spam2.com http://spam3.com http://spam4.com http://spam5.com'
+);
+// $result = [
+//     'is_spam'    => true,
+//     'spam_score' => 0.8,    // or higher
+//     'reasons'    => [
+//         'Contains spam keywords',       // 'viagra', 'click here', 'free money', 'cheap'
+//         'Too many links',               // 5 links, max is 3
+//         'Excessive capital letters',     // well above 70%
+//         'Suspicious patterns detected',  // '!!!' excessive punctuation
+//     ],
+//     'severity'   => 'high',
+// ]
+```
 
+### `cleanContent(string $content): string`
 
-**Throws Exceptions**
+Sanitizes content by replacing profanity with asterisks, collapsing repeated punctuation, and normalizing repeated characters.
 
-
-`\Exception`
-> If FileStorage initialization fails
-
-Usage example:
 ```php
 $detector = new SpamDetector();
-// Detector is now ready to analyze content
+
+$cleaned = $detector->cleanContent("This is damn stupid!!!! Check it ouuuuuuut...........");
+// "This is **** ****** !!! Check it ouuut..."
+//
+// What happened:
+//   'damn'   -> '****'     (profanity replaced)
+//   'stupid' -> '******'   (profanity replaced)
+//   '!!!!'   -> '!!!'      (4+ punctuation collapsed to 3)
+//   'uuuuuuut' -> 'uuut'  (5+ repeated chars collapsed to 3)
+//   '..........' -> '...'  (4+ dots collapsed to 3)
 ```
 
-<hr />
+### `addSpamKeyword(string $keyword): bool`
 
+Adds a keyword to the spam detection list. Returns `false` if it already exists. Persisted to `FileStorage`.
 
-### SpamDetector::addProfanityWord
-
-**Description**
-
-```php
-public addProfanityWord (string $word)
-```
-
-Add profanity word
-
-Adds a new word to the profanity filter list if it doesn't already exist.
-Updates the storage with the new profanity list.
-
-**Parameters**
-
-* `(string) $word`
-: Word to add to profanity filter
-
-**Return Values**
-
-`bool`
-
-> True if word was added, false if it already exists
-
-Usage example:
 ```php
 $detector = new SpamDetector();
-if ($detector->addProfanityWord('badword')) {
-    echo "Profanity word added successfully";
-} else {
-    echo "Word already in profanity list";
-}
+
+$detector->addSpamKeyword('crypto airdrop');  // returns true
+$detector->addSpamKeyword('nft giveaway');    // returns true
+$detector->addSpamKeyword('viagra');          // returns false (already in default list)
 ```
 
+### `removeSpamKeyword(string $keyword): bool`
 
-<hr />
-
-
-### SpamDetector::addSpamKeyword
-
-**Description**
+Removes a keyword from the list. Returns `false` if not found.
 
 ```php
-public addSpamKeyword (string $keyword)
+$detector->removeSpamKeyword('discount');  // returns true  (was in default list)
+$detector->removeSpamKeyword('foobar');    // returns false (not in list)
 ```
 
-Add spam keyword
+### `addProfanityWord(string $word): bool`
 
-Adds a new keyword to the spam detection list if it doesn't already exist.
-Updates the storage with the new keyword list.
+Adds a word to the profanity filter. Returns `false` if it already exists.
 
-**Parameters**
-
-* `(string) $keyword`
-: Keyword to add to spam detection list
-
-**Return Values**
-
-`bool`
-
-> True if keyword was added, false if it already exists
-
-Usage example:
 ```php
-$detector = new SpamDetector();
-if ($detector->addSpamKeyword('new spam word')) {
-    echo "Keyword added successfully";
-} else {
-    echo "Keyword already exists";
-}
+$detector->addProfanityWord('jerk');   // returns true
+$detector->addProfanityWord('damn');   // returns false (already in default list)
 ```
 
+### `removeProfanityWord(string $word): bool`
 
-<hr />
-
-
-### SpamDetector::analyzeContent
-
-**Description**
+Removes a word from the profanity filter. Returns `false` if not found.
 
 ```php
-public analyzeContent (string $content)
+$detector->removeProfanityWord('hell');    // returns true
+$detector->removeProfanityWord('xyz');     // returns false
 ```
 
-Analyze content for spam indicators
+### `getStats(): array`
 
-Performs comprehensive analysis including keyword detection, profanity check,
-link counting, capital letter analysis, and pattern recognition.
-Returns a detailed analysis with spam score and reasons.
-
-**Parameters**
-
-* `(string) $content`
-: Content to analyze for spam
-
-**Return Values**
-
-`array`
-
-> Analysis result with 'is_spam', 'spam_score', 'reasons', 'severity' keys
-
-Usage example:
-```php
-$detector = new SpamDetector();
-$result = $detector->analyzeContent("CLICK HERE FOR FREE MONEY!!!");
-
-if ($result['is_spam']) {
-    echo "Spam detected! Score: " . $result['spam_score'];
-    echo "Severity: " . $result['severity'];
-    foreach ($result['reasons'] as $reason) {
-        echo "- " . $reason . "\n";
-    }
-}
-```
-
-
-<hr />
-
-
-### SpamDetector::cleanContent
-
-**Description**
+Returns detection statistics from the `spam_log` table (entries with `detection_type = 'content_analysis'`).
 
 ```php
-public cleanContent (string $content)
-```
-
-Clean content by removing spam and profanity
-
-Sanitizes content by replacing profanity with asterisks, reducing
-excessive punctuation, and normalizing repeated characters and whitespace.
-
-**Parameters**
-
-* `(string) $content`
-: Content to clean and sanitize
-
-**Return Values**
-
-`string`
-
-> Cleaned content with profanity and spam patterns removed
-
-Usage example:
-```php
-$detector = new SpamDetector();
-$cleaned = $detector->cleanContent("This is damn stupid!!!! content");
-echo $cleaned; // Outputs: "This is **** stupid!!! content"
-```
-
-
-<hr />
-
-
-### SpamDetector::getProfanityList
-
-**Description**
-
-```php
-public getProfanityList (void)
-```
-
-Get profanity list
-
-Returns the current list of profanity words used for content filtering.
-This includes both default words and any custom additions.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`array`
-
-> Array of profanity words
-
-Usage example:
-```php
-$detector = new SpamDetector();
-$profanity = $detector->getProfanityList();
-echo "Total profanity words: " . count($profanity);
-// Note: Be careful when displaying profanity words
-```
-
-
-<hr />
-
-
-### SpamDetector::getSpamKeywords
-
-**Description**
-
-```php
-public getSpamKeywords (void)
-```
-
-Get spam keywords
-
-Returns the current list of spam keywords used for detection.
-This includes both default keywords and any custom additions.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`array`
-
-> Array of spam keywords
-
-Usage example:
-```php
-$detector = new SpamDetector();
-$keywords = $detector->getSpamKeywords();
-echo "Total keywords: " . count($keywords);
-foreach ($keywords as $keyword) {
-    echo "- " . $keyword . "\n";
-}
-```
-
-
-<hr />
-
-
-### SpamDetector::getStats
-
-**Description**
-
-```php
-public getStats (void)
-```
-
-Get spam detection statistics
-
-Returns comprehensive statistics about spam detection performance
-including total detections, severity breakdown, top reasons, and averages.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`array`
-
-> Statistics array with detection counts, severity breakdown, and analysis data
-
-Usage example:
-```php
-$detector = new SpamDetector();
 $stats = $detector->getStats();
-echo "Total detections: " . $stats['total_detections'];
-echo "Average spam score: " . $stats['average_spam_score'];
-echo "Recent detections (24h): " . $stats['recent_detections'];
-print_r($stats['severity_breakdown']);
-print_r($stats['top_reasons']);
+
+// $stats = [
+//     'total_detections'      => 134,
+//     'recent_detections'     => 12,           // last 24 hours
+//     'severity_breakdown'    => [
+//         'low'    => 20,
+//         'medium' => 78,
+//         'high'   => 36,
+//     ],
+//     'average_spam_score'    => 0.67,
+//     'top_reasons'           => [
+//         'Contains spam keywords'        => 98,
+//         'Too many links'                => 45,
+//         'Excessive capital letters'     => 32,
+//         'Suspicious patterns detected'  => 28,
+//         'Contains profanity'            => 15,
+//     ],
+//     'spam_keywords_count'   => 26,
+//     'profanity_words_count' => 5,
+// ]
 ```
 
+### `shouldAutoBlock(string $content): bool`
 
-<hr />
-
-
-### SpamDetector::isEnabled
-
-**Description**
+Shortcut that calls `analyzeContent()` and returns `true` if `spam_score >= 0.8`.
 
 ```php
-public isEnabled (void)
-```
-
-Check if spam detection is enabled
-
-Returns the current enabled status of the spam detection system
-based on configuration settings.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`bool`
-
-> True if spam detection is enabled, false otherwise
-
-Usage example:
-```php
-$detector = new SpamDetector();
-if ($detector->isEnabled()) {
-    $result = $detector->analyzeContent($userInput);
-    // Process spam detection results
-} else {
-    // Spam detection is disabled, skip analysis
+if ($detector->shouldAutoBlock($userComment)) {
+	http_response_code(403);
+	exit('Content blocked.');
 }
 ```
 
+### `trainWithFeedback(string $content, bool $isSpam): void`
 
-<hr />
-
-
-### SpamDetector::removeProfanityWord
-
-**Description**
+Stores user feedback (spam or not-spam) in the `spam_training` table for future analysis. Content is stored as a SHA-256 hash plus a 200-character sample.
 
 ```php
-public removeProfanityWord (string $word)
+// Moderator marks content as spam
+$detector->trainWithFeedback($flaggedComment, true);
+
+// Moderator marks false positive as legitimate
+$detector->trainWithFeedback($legitimateComment, false);
 ```
 
-Remove profanity word
+### `isEnabled(): bool`
 
-Removes a word from the profanity filter list if it exists.
-Updates the storage with the modified profanity list.
+Returns the `spam_detection.enabled` config value. When disabled, `analyzeContent()` returns a zero-score result without running any checks.
 
-**Parameters**
+### `getSpamKeywords(): array` / `getProfanityList(): array`
 
-* `(string) $word`
-: Word to remove from profanity filter
-
-**Return Values**
-
-`bool`
-
-> True if word was removed, false if it doesn't exist
-
-Usage example:
-```php
-$detector = new SpamDetector();
-if ($detector->removeProfanityWord('oldword')) {
-    echo "Profanity word removed successfully";
-} else {
-    echo "Word not found in profanity list";
-}
-```
-
-
-<hr />
-
-
-### SpamDetector::removeSpamKeyword
-
-**Description**
+Return the current keyword and profanity arrays.
 
 ```php
-public removeSpamKeyword (string $keyword)
+$keywords  = $detector->getSpamKeywords();
+// ['viagra', 'cialis', 'buy now', 'click here', 'free money', ...]
+
+$profanity = $detector->getProfanityList();
+// ['damn', 'hell', 'crap', 'stupid', 'idiot']
 ```
 
-Remove spam keyword
+## Security Features
 
-Removes a keyword from the spam detection list if it exists.
-Updates the storage with the modified keyword list.
+### Text Normalization (Evasion Defeat)
 
-**Parameters**
+The internal `normalizeText()` method runs before keyword matching to defeat common spam evasion techniques:
 
-* `(string) $keyword`
-: Keyword to remove from spam detection list
+| Evasion technique       | Input             | Normalized to |
+|------------------------|-------------------|---------------|
+| Leetspeak              | `v1@gr@`          | `viagra`      |
+| Character insertion    | `v.i.a.g.r.a`     | `viagra`      |
+| Zero-width characters  | `vi\u200Bagra`    | `viagra`      |
+| Mixed case             | `ViAgRa`          | `viagra`      |
 
-**Return Values**
+### Keyword Matching Strategy
 
-`bool`
+- **Single-word keywords** (e.g., `viagra`): matched with `\b` word boundaries via regex, so `"viagra"` matches but `"extravaganza"` does not.
+- **Multi-word phrases** (e.g., `buy now`): matched with `strpos` substring search on the normalized text.
 
-> True if keyword was removed, false if it doesn't exist
+### Homoglyph Detection
 
-Usage example:
-```php
-$detector = new SpamDetector();
-if ($detector->removeSpamKeyword('old keyword')) {
-    echo "Keyword removed successfully";
-} else {
-    echo "Keyword not found";
-}
-```
+Content containing both Cyrillic characters (`\x{0400}-\x{04FF}`) and Latin characters is flagged as a suspicious pattern. This catches attacks where visually similar Cyrillic letters replace Latin ones to bypass keyword filters.
 
+## Gotchas
 
-<hr />
-
-
-### SpamDetector::shouldAutoBlock
-
-**Description**
-
-```php
-public shouldAutoBlock (string $content)
-```
-
-Check if content should be auto-blocked
-
-Determines if content should be automatically blocked based on
-spam analysis. Content is auto-blocked if spam score is 0.8 or higher.
-
-**Parameters**
-
-* `(string) $content`
-: Content to check for auto-blocking
-
-**Return Values**
-
-`bool`
-
-> True if content should be auto-blocked, false otherwise
-
-Usage example:
-```php
-$detector = new SpamDetector();
-if ($detector->shouldAutoBlock("Buy cheap viagra now!!!")) {
-    // Block this content automatically
-    die("Content blocked for spam");
-}
-```
-
-
-<hr />
-
-
-### SpamDetector::trainWithFeedback
-
-**Description**
-
-```php
-public trainWithFeedback (string $content, bool $isSpam)
-```
-
-Train the spam detector with user feedback
-
-Collects user feedback about whether content is spam or legitimate
-to improve future detection accuracy. Stores training data for analysis.
-
-**Parameters**
-
-* `(string) $content`
-: Content to provide feedback on
-* `(bool) $isSpam`
-: True if content is spam, false if legitimate
-
-**Return Values**
-
-`void`
-
->
-
-Usage example:
-```php
-$detector = new SpamDetector();
-
-// User reports content as spam
-$detector->trainWithFeedback($suspiciousContent, true);
-
-// User reports content as legitimate (false positive)
-$detector->trainWithFeedback($falsePositiveContent, false);
-
-echo "Feedback recorded for machine learning improvement";
-```
-
-
-<hr />
+- **Keywords and profanity are persisted.** On first run, default lists are saved to `FileStorage`. After that, the stored versions are used. If you edit `loadSpamKeywords()` defaults in the source code, existing stored lists will not be updated. Use `addSpamKeyword()` / `removeSpamKeyword()` to modify the live list.
+- **Score can exceed individual check caps.** Each check has its own cap (0.3-0.6), but the total score is the sum of all checks. A message hitting multiple checks can easily reach 1.0+, though the severity mapping only distinguishes up to 0.8.
+- **Empty or whitespace-only content returns zero score.** The method short-circuits before running any checks.
+- **`cleanContent()` does not check spam keywords.** It only replaces profanity words, normalizes punctuation, and collapses repeated characters. Spam keywords are left intact -- use `analyzeContent()` to detect them.

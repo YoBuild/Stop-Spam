@@ -170,8 +170,8 @@ class ContentValidator {
 			}
 		}
 
-		// Final encoding for output safety
-		$result['sanitized_content'] = $this->finalEncode($content);
+		// Final encoding for output safety (skip when HTML is allowed to avoid double-encoding)
+		$result['sanitized_content'] = $options['allow_html'] ? $content : $this->finalEncode($content);
 
 		// Log security issues if found
 		if (!empty($result['security_issues'])) {
@@ -748,7 +748,7 @@ class ContentValidator {
 			'content_length'  => strlen($result['original_content']),
 			'security_issues' => json_encode($result['security_issues']),
 			'changes_made'    => json_encode($result['changes_made']),
-			'ip_address'      => $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0',
+			'ip_address'      => ClientIP::get(),
 			'user_agent'      => $_SERVER['HTTP_USER_AGENT'] ?? '',
 			'severity'        => $this->calculateSeverity($result['security_issues']),
 		]);
@@ -877,13 +877,10 @@ class ContentValidator {
 	 * // Custom validation rule is now registered
 	 * ```
 	 */
+	private array $customRules = [];
+
 	public function addValidationRule(string $name, callable $validator): void {
-		// Store custom validation rules for future use
-		$this->storage->insert('custom_validation_rules', [
-			'name'        => $name,
-			'description' => 'Custom validation rule',
-			'active'      => true,
-		]);
+		$this->customRules[$name] = $validator;
 	}
 
 	/**

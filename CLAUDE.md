@@ -23,6 +23,9 @@ npm run dev        # or: npm run watch
 
 # Generate API docs from PHPDoc
 composer exec phpdoc-md
+
+# Syntax check a PHP file
+php -l Yohns/Security/CSRFToken.php
 ```
 
 ## Architecture
@@ -38,7 +41,8 @@ SecurityManager (Yohns\Security)
 ├── ContentValidator   - Input sanitization and XSS protection
 ├── TokenManager       - API/verification/reset token lifecycle
 ├── IPSecurity         - IP whitelist/blacklist and reputation tracking
-└── FileStorage        - JSON file persistence layer (used by all components)
+├── FileStorage        - JSON file persistence layer (used by all components)
+└── ClientIP           - Shared IP detection with trusted proxy gate (used by all components)
 ```
 
 `ContentAnalyzer` (`Yohns\AntiSpam`) provides advanced content analysis (sentiment, readability, language detection) as a standalone class.
@@ -50,6 +54,15 @@ SecurityManager (Yohns\Security)
 **Storage:** JSON files in `database/` directory with file locking (`flock`). No database required.
 
 **Frontend:** `public/assets/js/security-validator.js` provides client-side bot detection, timing analysis, and CSRF validation. SCSS uses Bootstrap 5.3.7.
+
+## Gotchas
+
+- **ClientIP trusted proxy gate:** Forwarded headers (X-Forwarded-For, etc.) are only trusted when REMOTE_ADDR is a known proxy. All classes delegate IP detection to `ClientIP::get()` — never read `$_SERVER` headers directly.
+- **FileStorage table names:** Must match `^[a-zA-Z0-9_-]+$` — path traversal attempts throw `InvalidArgumentException`.
+- **TokenManager signing secret:** `signToken()`/`verifyTokenSignature()` throw `RuntimeException` if `token_management.signing_secret` config key is missing. No default fallback.
+- **ContentValidator allow_html:** When `allow_html=true`, `finalEncode()` is skipped to avoid double-encoding already-sanitized HTML.
+- **IPSecurity analyzeIP vs enforcePolicy:** `analyzeIP()` is a pure read (no side effects). Use `enforcePolicy()` when you want auto-blocking of low-trust IPs.
+- **RateLimiter isLimited vs recordAttempt:** `isLimited()` is a pure check. Call `recordAttempt()` separately to increment counters.
 
 ## Code Style
 

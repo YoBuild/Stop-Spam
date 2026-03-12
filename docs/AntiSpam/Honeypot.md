@@ -1,323 +1,246 @@
 # Yohns\AntiSpam\Honeypot
 
-Honeypot class for detecting automated bot submissions
+Bot detection via hidden form fields and timing analysis. Bots that auto-fill hidden fields or submit forms inhumanly fast get caught. Legitimate users never see the honeypot field.
 
-Uses hidden form fields and timing analysis to catch spam bots.
+Uses `\Yohns\Security\ClientIP::get()` for IP detection (never reads `$_SERVER` headers directly).
+Stores honeypot sessions in both `$_SESSION` and `FileStorage` (backup for stateless apps).
+Logs all spam attempts to the `spam_log` storage table.
 
-Usage example:
-```php
-$honeypot = new Honeypot();
-// In your form:
-echo $honeypot->getCSS();
-echo $honeypot->initialize('contact_form');
-// In your form handler:
-$result = $honeypot->validate($_POST, 'contact_form');
-if (!$result['passed']) {
-    die('Spam detected: ' . $result['reason']);
-}
-```
+## Configuration
 
+All values come from the `honeypot` section in `config/security.php`:
 
-
-
+| Key              | Default       | Description                                      |
+|------------------|---------------|--------------------------------------------------|
+| `enabled`        | `true`        | Master switch for honeypot protection             |
+| `field_name`     | `'website'`   | Name attribute of the hidden input field          |
+| `min_time`       | `2`           | Minimum seconds before a submission is valid      |
+| `max_time`       | `3600`        | Maximum seconds (1 hour) before form goes stale   |
+| `session_prefix` | `'honeypot_'` | Prefix for session keys storing form timestamps   |
 
 ## Methods
 
-| Name | Description |
-|------|-------------|
-|[__construct](#honeypot__construct)|Constructor - Initialize honeypot with configuration|
-|[cleanup](#honeypotcleanup)|Clean up old honeypot sessions|
-|[getCSS](#honeypotgetcss)|Get CSS to hide honeypot field|
-|[getHiddenField](#honeypotgethiddenfield)|Get hidden field HTML|
-|[getStats](#honeypotgetstats)|Get honeypot statistics|
-|[initialize](#honeypotinitialize)|Initialize honeypot for a form|
-|[isEnabled](#honeypotisenabled)|Check if honeypot is enabled|
-|[validate](#honeypotvalidate)|Validate honeypot submission|
+### `initialize(string $formId = 'default'): string`
 
-
-
-
-### Honeypot::__construct
-
-**Description**
+Starts a honeypot session for the given form. Records the current timestamp in `$_SESSION` and `FileStorage`, then returns the hidden field HTML.
 
 ```php
-public __construct (void)
-```
+<?php
+use Yohns\AntiSpam\Honeypot;
 
-Constructor - Initialize honeypot with configuration
-
-Sets up the honeypot system with configuration from Config class.
-Starts session if not already active.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`void`
-
-
-**Throws Exceptions**
-
-
-`\Exception`
-> If FileStorage initialization fails
-
-Usage example:
-```php
 $honeypot = new Honeypot();
+?>
+<html>
+<head>
+	<?= $honeypot->getCSS() ?>
+</head>
+<body>
+	<form method="post" action="/submit-contact">
+		<?= $honeypot->initialize('contact_form') ?>
+		<!-- Outputs: <input type="text" name="website" value="" style="display:none !important; position:absolute; left:-9999px;" tabindex="-1" autocomplete="off"> -->
+
+		<label>Name</label>
+		<input type="text" name="name" required>
+
+		<label>Email</label>
+		<input type="email" name="email" required>
+
+		<label>Message</label>
+		<textarea name="message" required></textarea>
+
+		<button type="submit">Send</button>
+	</form>
+</body>
+</html>
 ```
 
-<hr />
+### `validate(array $postData, string $formId = 'default'): array`
 
+Runs three checks in sequence. Returns on the first failure.
 
-### Honeypot::cleanup
+**Validation checks (in order):**
 
-**Description**
+1. **`checkHoneypotField()`** -- If the hidden `website` field contains any value, it is a bot. Bots auto-fill all fields; real users never see this one.
+2. **`checkTiming()`** -- Submission faster than `min_time` (2s) = bot. Slower than `max_time` (3600s) = stale/expired form. Looks up the timestamp from `$_SESSION` first, falls back to `FileStorage`.
+3. **`checkBotBehavior()`** -- Checks four suspicious patterns and fails if 2 or more are found:
+   - No common fields present (`email`, `name`, `message`, `content`, `subject`)
+   - Total POST content shorter than 3 characters
+   - More than 5 URLs in the combined POST data
+   - More than 10 spam log entries from the same IP in the last 5 minutes
+
+**Return value:**
 
 ```php
-public cleanup (void)
+[
+	'passed'  => true,   // bool: did all checks pass?
+	'reason'  => '',     // string: failure reason (empty on success)
+	'details' => [],     // array: detailed explanation strings
+]
 ```
 
-Clean up old honeypot sessions
+**Form handler example:**
 
-Removes expired honeypot sessions from storage to prevent
-database bloat and maintain performance.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`int`
-
-> Number of sessions cleaned up
-
-Usage example:
 ```php
+<?php
+use Yohns\AntiSpam\Honeypot;
+
 $honeypot = new Honeypot();
-$cleaned = $honeypot->cleanup();
-echo "Cleaned up {$cleaned} expired sessions";
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+	$result = $honeypot->validate($_POST, 'contact_form');
+
+	if (!$result['passed']) {
+		// $result['reason'] is one of:
+		//   'Honeypot field filled'
+		//   'Submission too fast'
+		//   'Submission too slow'
+		//   'No honeypot session found'
+		//   'Suspicious bot behavior'
+		error_log('Spam blocked: ' . $result['reason']);
+		http_response_code(403);
+		exit('Form submission rejected.');
+	}
+
+	// Submission is legitimate -- process the form
+	$name    = $_POST['name'];
+	$email   = $_POST['email'];
+	$message = $_POST['message'];
+	// ... save to database, send email, etc.
+}
 ```
 
+### `getHiddenField(): string`
 
-<hr />
-
-
-### Honeypot::getCSS
-
-**Description**
+Returns the raw hidden input HTML without starting a session. Useful if you call `initialize()` separately and just need the field markup again.
 
 ```php
-public getCSS (void)
+$html = $honeypot->getHiddenField();
+// '<input type="text" name="website" value="" style="display:none !important; position:absolute; left:-9999px;" tabindex="-1" autocomplete="off">'
 ```
 
-Get CSS to hide honeypot field
+Returns an empty string when honeypot is disabled.
 
-Returns CSS styles to ensure honeypot field remains hidden
-from legitimate users while remaining accessible to bots.
+### `getCSS(): string`
 
-**Parameters**
+Returns a `<style>` block that hides the honeypot field via multiple CSS properties (`display:none`, `position:absolute`, `visibility:hidden`). Place this in your `<head>`.
 
-`This function has no parameters.`
-
-**Return Values**
-
-`string`
-
-> CSS style block for hiding honeypot field
-
-Usage example:
 ```php
-$honeypot = new Honeypot();
 echo $honeypot->getCSS();
-// Place this in your HTML <head> section
+// Output:
+// <style>
+// .honeypot, input[name='website'] {
+//     display: none !important;
+//     position: absolute !important;
+//     left: -9999px !important;
+//     top: -9999px !important;
+//     visibility: hidden !important;
+// }
+// </style>
 ```
 
+### `cleanup(): int`
 
-<hr />
+Removes expired honeypot sessions from `FileStorage` (sessions past their `expires_at` timestamp). Returns the count of deleted records. Call this from a cron job or periodic maintenance script.
 
-
-### Honeypot::getHiddenField
-
-**Description**
-
-```php
-public getHiddenField (void)
-```
-
-Get hidden field HTML
-
-Returns the HTML input element for the honeypot field.
-This field should be hidden from users but visible to bots.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`string`
-
-> HTML input element for honeypot field
-
-Usage example:
 ```php
 $honeypot = new Honeypot();
-echo $honeypot->getHiddenField();
-// Outputs: <input type="text" name="website" value="" style="display:none !important;...">
+$deleted = $honeypot->cleanup();
+// $deleted = 14  (14 expired sessions removed)
 ```
 
+### `getStats(): array`
 
-<hr />
+Returns spam detection statistics from the `spam_log` table, filtered to honeypot-related entries only.
 
-
-### Honeypot::getStats
-
-**Description**
-
-```php
-public getStats (void)
-```
-
-Get honeypot statistics
-
-Returns comprehensive statistics about honeypot performance
-including total attempts, detection types, and recent activity.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`array`
-
-> Statistics array with 'total_attempts', 'detection_types', 'recent_attempts'
-
-Usage example:
 ```php
 $honeypot = new Honeypot();
 $stats = $honeypot->getStats();
-echo "Total spam attempts: " . $stats['total_attempts'];
-echo "Recent attempts (24h): " . $stats['recent_attempts'];
-print_r($stats['detection_types']);
+
+// $stats = [
+//     'total_attempts'  => 47,
+//     'detection_types' => [
+//         'honeypot_honeypot_field' => 12,
+//         'honeypot_timing_too_fast' => 28,
+//         'honeypot_timing_too_slow' => 3,
+//         'honeypot_bot_behavior'   => 4,
+//     ],
+//     'recent_attempts' => 5,   // last 24 hours
+// ]
 ```
 
+### `isEnabled(): bool`
 
-<hr />
-
-
-### Honeypot::initialize
-
-**Description**
+Returns `true` if `honeypot.enabled` is `true` in config. When disabled, `initialize()` returns an empty string and `validate()` always passes.
 
 ```php
-public initialize (string $formId)
-```
-
-Initialize honeypot for a form
-
-Creates a honeypot session for the specified form and returns
-the hidden field HTML to include in your form.
-
-**Parameters**
-
-* `(string) $formId`
-: Unique identifier for the form (default: 'default')
-
-**Return Values**
-
-`string`
-
-> HTML for hidden honeypot field
-
-Usage example:
-```php
-$honeypot = new Honeypot();
-echo $honeypot->initialize('contact_form');
-// Outputs: <input type="text" name="website" value="" style="display:none !important;...">
-```
-
-
-<hr />
-
-
-### Honeypot::isEnabled
-
-**Description**
-
-```php
-public isEnabled (void)
-```
-
-Check if honeypot is enabled
-
-Returns the current enabled status of the honeypot system
-based on configuration settings.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`bool`
-
-> True if honeypot is enabled, false otherwise
-
-Usage example:
-```php
-$honeypot = new Honeypot();
 if ($honeypot->isEnabled()) {
-    echo $honeypot->initialize('my_form');
-} else {
-    echo "Honeypot protection is disabled";
+	echo $honeypot->initialize('signup_form');
 }
 ```
 
-
-<hr />
-
-
-### Honeypot::validate
-
-**Description**
+## Complete Form Example
 
 ```php
-public validate (array $postData, string $formId)
+<?php
+// form.php
+use Yohns\AntiSpam\Honeypot;
+
+$honeypot = new Honeypot();
+?>
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Contact Us</title>
+	<?= $honeypot->getCSS() ?>
+</head>
+<body>
+	<form method="post" action="process.php">
+		<?= $honeypot->initialize('contact_form') ?>
+
+		<label for="name">Name</label>
+		<input type="text" id="name" name="name" required>
+
+		<label for="email">Email</label>
+		<input type="email" id="email" name="email" required>
+
+		<label for="subject">Subject</label>
+		<input type="text" id="subject" name="subject">
+
+		<label for="message">Message</label>
+		<textarea id="message" name="message" required></textarea>
+
+		<button type="submit">Send Message</button>
+	</form>
+</body>
+</html>
 ```
 
-Validate honeypot submission
-
-Performs comprehensive validation including honeypot field check,
-timing analysis, and bot behavior detection.
-
-**Parameters**
-
-* `(array) $postData`
-: Form submission data ($_POST)
-* `(string) $formId`
-: Form identifier used during initialization
-
-**Return Values**
-
-`array`
-
-> Validation result with 'passed', 'reason', and 'details' keys
-
-Usage example:
 ```php
+<?php
+// process.php
+use Yohns\AntiSpam\Honeypot;
+
+$honeypot = new Honeypot();
+
 $result = $honeypot->validate($_POST, 'contact_form');
+
 if (!$result['passed']) {
-    error_log('Spam detected: ' . $result['reason']);
-    die('Form submission rejected');
+	http_response_code(403);
+	exit('Submission rejected.');
 }
-echo "Form validated successfully!";
+
+// Safe to process
+$name    = htmlspecialchars($_POST['name']);
+$email   = filter_var($_POST['email'], FILTER_VALIDATE_EMAIL);
+$message = htmlspecialchars($_POST['message']);
+
+mail($email, 'Contact Form', $message);
+echo 'Thank you for your message!';
 ```
 
+## Gotchas
 
-<hr />
+- **Session must be available.** The constructor calls `session_start()` if no session is active. If your framework manages sessions differently, make sure a session is started before constructing `Honeypot`.
+- **FileStorage fallback.** If `$_SESSION` data is lost between requests (e.g., stateless API), the class falls back to `FileStorage` using the client IP + form ID to find the session. This means two users behind the same IP submitting the same form could theoretically collide.
+- **Field name collisions.** The default field name is `website`. If your form has a legitimate field called `website`, change `honeypot.field_name` in config or that field will trigger false positives.
+- **Bot behavior check needs common fields.** The `checkBotBehavior()` check looks for fields named `email`, `name`, `message`, `content`, or `subject`. If your form uses none of these names, that counts as one suspicious pattern toward the threshold of 2.

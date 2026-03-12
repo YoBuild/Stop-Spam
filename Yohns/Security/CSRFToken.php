@@ -162,7 +162,7 @@ class CSRFToken {
 		$sessionKey = $this->sessionPrefix . $context;
 		if (isset($_SESSION[$sessionKey])) {
 			$sessionData = $_SESSION[$sessionKey];
-			if ($sessionData['token'] === $token && $sessionData['expires_at'] > time()) {
+			if (hash_equals($sessionData['token'], $token) && $sessionData['expires_at'] > time()) {
 				return true;
 			}
 		}
@@ -204,11 +204,6 @@ class CSRFToken {
 		// Check POST data
 		if (isset($_POST['csrf_token'])) {
 			return $_POST['csrf_token'];
-		}
-
-		// Check GET data
-		if (isset($_GET['csrf_token'])) {
-			return $_GET['csrf_token'];
 		}
 
 		// Check headers
@@ -419,23 +414,7 @@ class CSRFToken {
 	 * ```
 	 */
 	private function getClientIP(): string {
-		$ipKeys = ['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'HTTP_CLIENT_IP', 'REMOTE_ADDR'];
-
-		foreach ($ipKeys as $key) {
-			if (!empty($_SERVER[$key])) {
-				$ip = $_SERVER[$key];
-				// Handle comma-separated IPs (forwarded)
-				if (strpos($ip, ',') !== false) {
-					$ip = trim(explode(',', $ip)[0]);
-				}
-				// Validate IP
-				if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-					return $ip;
-				}
-			}
-		}
-
-		return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+		return ClientIP::get();
 	}
 
 	/**

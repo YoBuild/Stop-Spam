@@ -693,21 +693,7 @@ class TokenManager {
 	 * ```
 	 */
 	private function getClientIP(): string {
-		$ipKeys = ['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'HTTP_CLIENT_IP', 'REMOTE_ADDR'];
-
-		foreach ($ipKeys as $key) {
-			if (!empty($_SERVER[$key])) {
-				$ip = $_SERVER[$key];
-				if (strpos($ip, ',') !== false) {
-					$ip = trim(explode(',', $ip)[0]);
-				}
-				if (filter_var($ip, FILTER_VALIDATE_IP)) {
-					return $ip;
-				}
-			}
-		}
-
-		return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+		return ClientIP::get();
 	}
 
 	/**
@@ -1127,7 +1113,10 @@ class TokenManager {
 	 * ```
 	 */
 	public function verifyTokenSignature(string $token, string $signature, string $secret = null): bool {
-		$secret = $secret ?: Config::get('token_management.signing_secret', 'security') ?: 'default_secret';
+		$secret = $secret ?: Config::get('token_management.signing_secret', 'security');
+		if (empty($secret)) {
+			throw new \RuntimeException('Token signing secret is not configured. Set token_management.signing_secret in security config.');
+		}
 		$expectedSignature = hash_hmac('sha256', $token, $secret);
 		return hash_equals($expectedSignature, $signature);
 	}
@@ -1154,7 +1143,10 @@ class TokenManager {
 	 * ```
 	 */
 	public function signToken(string $token, string $secret = null): string {
-		$secret = $secret ?: Config::get('token_management.signing_secret', 'security') ?: 'default_secret';
+		$secret = $secret ?: Config::get('token_management.signing_secret', 'security');
+		if (empty($secret)) {
+			throw new \RuntimeException('Token signing secret is not configured. Set token_management.signing_secret in security config.');
+		}
 		return hash_hmac('sha256', $token, $secret);
 	}
 
@@ -1194,8 +1186,8 @@ class TokenManager {
 
 		// Remove actual token values for security
 		return array_map(function ($token) {
-			unset($token['token']);
 			$token['token_hash'] = hash('sha256', $token['token'] ?? '');
+			unset($token['token']);
 			return $token;
 		}, $tokens);
 	}

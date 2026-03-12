@@ -1,488 +1,272 @@
-# Yohns\Security\CSRFToken
+# CSRFToken
 
-CSRFToken class for Cross-Site Request Forgery protection
+**Class:** `Yohns\Security\CSRFToken`
+**File:** `Yohns/Security/CSRFToken.php`
 
-Provides secure token generation and validation to prevent CSRF attacks.
-Supports multiple storage backends and provides flexible integration options.
+CSRF protection with triple storage: session, JSON file (for stateless apps), and cookie (for JavaScript access). Tokens are generated with `random_bytes()` and validated with `hash_equals()` for timing-safe comparison.
 
-Usage example:
+## Config
+
+All values come from the `csrf` section of `config/security.php`:
+
+| Key              | Default          | Description                                      |
+|------------------|------------------|--------------------------------------------------|
+| `enabled`        | `true`           | Master switch. When `false`, `generateToken()` returns `''` and `validateToken()` returns `true`. |
+| `expiration`     | `1800`           | Token lifetime in seconds (30 minutes).          |
+| `session_prefix` | `'csrf_token_'`  | Prefix for session keys (`csrf_token_contact_form`). |
+| `header_name`    | `'X-CSRF-TOKEN'` | HTTP header name for AJAX token submission.      |
+| `cookie_name`    | `'XSRF-TOKEN'`   | Cookie name set for JavaScript access.           |
+| `same_site`      | `'Lax'`          | Cookie SameSite attribute (`Lax`, `Strict`, or `None`). |
+| `token_length`   | `32`             | Bytes passed to `random_bytes()`. Output is hex-encoded, so the token string is 64 characters. |
+
 ```php
-$csrf = new CSRFToken();
-// In your form:
-echo $csrf->getHiddenField('contact_form');
-echo $csrf->getMetaTag('contact_form');
+// config/security.php
+'csrf' => [
+	'enabled'        => true,
+	'expiration'     => 1800,
+	'session_prefix' => 'csrf_token_',
+	'header_name'    => 'X-CSRF-TOKEN',
+	'cookie_name'    => 'XSRF-TOKEN',
+	'same_site'      => 'Lax',
+	'token_length'   => 32,
+],
+```
 
-// In your form handler:
-if (!$csrf->validateRequest('contact_form')) {
-    die('CSRF token validation failed');
+## Basic Usage: HTML Form
+
+```php
+<?php
+use Yohns\Security\CSRFToken;
+
+$csrf = new CSRFToken();
+?>
+<form method="post" action="/settings/save">
+	<?= $csrf->getHiddenField('settings_form') ?>
+	<input type="text" name="display_name" value="Jane">
+	<button type="submit">Save</button>
+</form>
+```
+
+This outputs:
+
+```html
+<input type="hidden" name="csrf_token" value="a1b2c3d4e5f6...">
+```
+
+### Validating the Submission
+
+```php
+<?php
+use Yohns\Security\CSRFToken;
+
+$csrf = new CSRFToken();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+	if (!$csrf->validateRequest('settings_form')) {
+		http_response_code(403);
+		die('CSRF validation failed.');
+	}
+
+	// Token is valid -- process the form
+	$displayName = $_POST['display_name'];
+	saveSettings($displayName);
+
+	// Invalidate the used token so it can't be replayed
+	$csrf->invalidateToken('settings_form');
 }
 ```
 
+## AJAX Setup
+
+Place a meta tag in your HTML `<head>`:
+
+```php
+<head>
+	<?= $csrf->getMetaTag('api_calls') ?>
+</head>
+```
+
+This outputs:
+
+```html
+<meta name="csrf-token" content="a1b2c3d4e5f6...">
+```
+
+Then in JavaScript, read the token and send it as a header:
+
+```javascript
+const token = document.querySelector('meta[name="csrf-token"]').content;
+
+fetch('/api/update-profile', {
+	method: 'POST',
+	headers: {
+		'Content-Type': 'application/json',
+		'X-CSRF-TOKEN': token
+	},
+	body: JSON.stringify({ name: 'Jane' })
+});
+```
+
+The server-side handler:
+
+```php
+<?php
+use Yohns\Security\CSRFToken;
+
+$csrf = new CSRFToken();
+
+// validateRequest() checks POST body first, then the X-CSRF-TOKEN header
+if (!$csrf->validateRequest('api_calls')) {
+	http_response_code(403);
+	echo json_encode(['error' => 'Invalid CSRF token']);
+	exit;
+}
+
+// Process the API request
+$data = json_decode(file_get_contents('php://input'), true);
+```
 
 ## Methods
 
-| Name | Description |
-|------|-------------|
-|[__construct](#csrftoken__construct)|Constructor - Initialize CSRF protection with configuration|
-|[cleanupExpiredTokens](#csrftokencleanupexpiredtokens)|Clean up expired tokens|
-|[generateToken](#csrftokengeneratetoken)|Generate a new CSRF token|
-|[getHiddenField](#csrftokengethiddenfield)|Generate HTML hidden input field for forms|
-|[getMetaTag](#csrftokengetmetatag)|Generate meta tag for JavaScript access|
-|[getStats](#csrftokengetstats)|Get token statistics|
-|[getTokenFromRequest](#csrftokengettokenfromrequest)|Get token from various sources (POST, GET, headers)|
-|[invalidateToken](#csrftokeninvalidatetoken)|Invalidate a token|
-|[isEnabled](#csrftokenisenabled)|Check if CSRF protection is enabled|
-|[regenerateToken](#csrftokenregeneratetoken)|Regenerate token (for enhanced security)|
-|[validateRequest](#csrftokenvalidaterequest)|Validate token from request|
-|[validateToken](#csrftokenvalidatetoken)|Validate a CSRF token|
+### `generateToken(string $context = 'default'): string`
 
-
-
-
-### CSRFToken::__construct
-
-**Description**
+Creates a new token and stores it in session, file storage, and cookie. Returns the hex-encoded token string (64 characters with default `token_length` of 32). Returns `''` if CSRF is disabled.
 
 ```php
-public __construct (void)
+$token = $csrf->generateToken('checkout_form');
+// '3f8a1b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a'
 ```
 
-Constructor - Initialize CSRF protection with configuration
+### `validateToken(string $token, string $context = 'default'): bool`
 
-Sets up CSRF protection system with configuration from Config class.
-Starts session if not already active and configures token parameters.
+Validates a token against session storage first, then file storage. Uses `hash_equals()` to prevent timing attacks. Returns `true` if CSRF is disabled.
 
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`void`
-
-
-**Throws Exceptions**
-
-
-`\Exception`
-> If FileStorage initialization fails
-
-Usage example:
 ```php
-$csrf = new CSRFToken();
-// CSRF protection is now ready to use
+$isValid = $csrf->validateToken($_POST['csrf_token'], 'checkout_form');
+// true or false
 ```
 
-<hr />
+### `validateRequest(string $context = 'default'): bool`
 
-
-### CSRFToken::cleanupExpiredTokens
-
-**Description**
+Extracts the token from the current request (POST body `csrf_token` field, then `X-CSRF-TOKEN` header) and validates it. Convenience wrapper around `getTokenFromRequest()` + `validateToken()`.
 
 ```php
-public cleanupExpiredTokens (void)
+if ($csrf->validateRequest('checkout_form')) {
+	// Process form
+}
 ```
 
-Clean up expired tokens
+### `getTokenFromRequest(string $context = 'default'): ?string`
 
-Removes expired tokens from both session and file storage to prevent
-storage bloat and maintain performance.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`int`
-
-> Number of tokens cleaned up
-
-Usage example:
-```php
-$csrf = new CSRFToken();
-$cleaned = $csrf->cleanupExpiredTokens();
-echo "Cleaned up {$cleaned} expired tokens";
-// Run this periodically via cron job
-```
-
-
-<hr />
-
-
-### CSRFToken::generateToken
-
-**Description**
+Returns the token found in the request, or `null`. Checks in order:
+1. `$_POST['csrf_token']`
+2. `X-CSRF-TOKEN` header (via `getallheaders()`)
+3. `$_SERVER['HTTP_X_CSRF_TOKEN']` (fallback)
 
 ```php
-public generateToken (string $context)
-```
-
-Generate a new CSRF token
-
-Creates a cryptographically secure token for the specified context.
-Stores token in session, file storage, and optionally sets a cookie.
-
-**Parameters**
-
-* `(string) $context`
-: Context identifier for the token (default: 'default')
-
-**Return Values**
-
-`string`
-
-> Generated CSRF token or empty string if disabled
-
-Usage example:
-```php
-$csrf = new CSRFToken();
-$token = $csrf->generateToken('user_profile');
-echo "Generated token: " . $token;
-// Use this token in your forms or AJAX requests
-```
-
-
-<hr />
-
-
-### CSRFToken::getHiddenField
-
-**Description**
-
-```php
-public getHiddenField (string $context)
-```
-
-Generate HTML hidden input field for forms
-
-Creates a hidden input field containing a CSRF token for the specified context.
-This should be included in all forms that modify server state.
-
-**Parameters**
-
-* `(string) $context`
-: Context identifier for the token
-
-**Return Values**
-
-`string`
-
-> HTML hidden input element or empty string if disabled
-
-Usage example:
-```php
-$csrf = new CSRFToken();
-echo '<form method="post">';
-echo $csrf->getHiddenField('user_settings');
-echo '<input type="text" name="username">';
-echo '<button type="submit">Save</button>';
-echo '</form>';
-```
-
-
-<hr />
-
-
-### CSRFToken::getMetaTag
-
-**Description**
-
-```php
-public getMetaTag (string $context)
-```
-
-Generate meta tag for JavaScript access
-
-Creates a meta tag containing CSRF token for JavaScript/AJAX requests.
-Place this in your HTML head section for frontend access.
-
-**Parameters**
-
-* `(string) $context`
-: Context identifier for the token
-
-**Return Values**
-
-`string`
-
-> HTML meta tag or empty string if disabled
-
-Usage example:
-```php
-$csrf = new CSRFToken();
-echo '<head>';
-echo $csrf->getMetaTag('api_calls');
-echo '</head>';
-// In JavaScript: document.querySelector('meta[name="csrf-token"]').content
-```
-
-
-<hr />
-
-
-### CSRFToken::getStats
-
-**Description**
-
-```php
-public getStats (void)
-```
-
-Get token statistics
-
-Returns comprehensive statistics about CSRF tokens including
-total count, active/expired breakdown, and context distribution.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`array`
-
-> Statistics array with 'total', 'active', 'expired', 'contexts' keys
-
-Usage example:
-```php
-$csrf = new CSRFToken();
-$stats = $csrf->getStats();
-echo "Total tokens: " . $stats['total'];
-echo "Active tokens: " . $stats['active'];
-echo "Expired tokens: " . $stats['expired'];
-print_r($stats['contexts']);
-```
-
-
-<hr />
-
-
-### CSRFToken::getTokenFromRequest
-
-**Description**
-
-```php
-public getTokenFromRequest (string $context)
-```
-
-Get token from various sources (POST, GET, headers)
-
-Attempts to retrieve CSRF token from POST data, GET parameters,
-or HTTP headers in that order of priority.
-
-**Parameters**
-
-* `(string) $context`
-: Context identifier (currently unused but for future compatibility)
-
-**Return Values**
-
-`string|null`
-
-> Found token or null if not found
-
-Usage example:
-```php
-$csrf = new CSRFToken();
 $token = $csrf->getTokenFromRequest();
-if ($token) {
-    echo "Found token: " . $token;
-} else {
-    echo "No CSRF token found in request";
-}
+// 'a1b2c3...' or null
 ```
 
+### `getHiddenField(string $context = 'default'): string`
 
-<hr />
-
-
-### CSRFToken::invalidateToken
-
-**Description**
+Generates a token and returns it wrapped in an HTML hidden input. Calls `generateToken()` internally.
 
 ```php
-public invalidateToken (string $context)
+echo $csrf->getHiddenField('login_form');
+// <input type="hidden" name="csrf_token" value="a1b2c3...">
 ```
 
-Invalidate a token
+### `getMetaTag(string $context = 'default'): string`
 
-Removes token from session, file storage, and clears associated cookie.
-Use this when you want to force token regeneration.
+Generates a token and returns it in a meta tag for JavaScript access. Calls `generateToken()` internally.
 
-**Parameters**
-
-* `(string) $context`
-: Context of token to invalidate
-
-**Return Values**
-
-`void`
-
->
-
-Usage example:
 ```php
-$csrf = new CSRFToken();
-// After successful form submission or security event
-$csrf->invalidateToken('user_profile');
-echo "Token invalidated, new token required";
+echo $csrf->getMetaTag('api_calls');
+// <meta name="csrf-token" content="a1b2c3...">
 ```
 
+### `invalidateToken(string $context = 'default'): void`
 
-<hr />
-
-
-### CSRFToken::isEnabled
-
-**Description**
+Removes the token from session, deletes all matching tokens from file storage, and clears the cookie.
 
 ```php
-public isEnabled (void)
+$csrf->invalidateToken('checkout_form');
 ```
 
-Check if CSRF protection is enabled
+### `regenerateToken(string $context = 'default'): string`
 
-Returns the current enabled status of the CSRF protection system
-based on configuration settings.
+Invalidates the current token and generates a new one. Use after sensitive operations like password changes.
 
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`bool`
-
-> True if CSRF protection is enabled, false otherwise
-
-Usage example:
 ```php
-$csrf = new CSRFToken();
+$newToken = $csrf->regenerateToken('account_settings');
+// Old token is now invalid, $newToken is the replacement
+```
+
+### `cleanupExpiredTokens(): int`
+
+Removes expired tokens from file storage and session. Returns the count of file-stored tokens deleted.
+
+```php
+$cleaned = $csrf->cleanupExpiredTokens();
+// 12 (number of expired tokens removed from file storage)
+```
+
+### `getStats(): array`
+
+Returns token statistics from file storage.
+
+```php
+$stats = $csrf->getStats();
+// [
+//     'total'    => 45,
+//     'active'   => 38,
+//     'expired'  => 7,
+//     'contexts' => [
+//         'login_form'    => 20,
+//         'settings_form' => 15,
+//         'api_calls'     => 10,
+//     ],
+// ]
+```
+
+### `isEnabled(): bool`
+
+Returns whether CSRF protection is enabled.
+
+```php
 if ($csrf->isEnabled()) {
-    echo $csrf->getHiddenField();
-} else {
-    echo "CSRF protection is disabled";
+	echo $csrf->getHiddenField('my_form');
 }
 ```
 
+## Token Storage Details
 
-<hr />
+Each generated token is stored in three places:
 
+| Storage       | Purpose                            | Access                              |
+|---------------|------------------------------------|-------------------------------------|
+| **Session**   | Primary validation (fastest)       | `$_SESSION['csrf_token_<context>']` |
+| **FileStorage** | Stateless app support (no session) | `csrf_tokens` table in JSON file    |
+| **Cookie**    | JavaScript access for AJAX         | `XSRF-TOKEN` cookie, `httponly=false` |
 
-### CSRFToken::regenerateToken
+The cookie is intentionally **not httponly** so JavaScript can read it. The cookie value alone cannot be used to bypass CSRF protection -- the token must also be submitted in the POST body or header, which a cross-origin attacker cannot do.
 
-**Description**
+## Security Design Decisions
 
-```php
-public regenerateToken (string $context)
-```
+**Timing-safe comparison.** `validateToken()` uses `hash_equals()` instead of `===`. A naive string comparison leaks timing information: an attacker can guess the token one character at a time by measuring response times.
 
-Regenerate token (for enhanced security)
+**No GET parameter tokens.** Tokens are only accepted via `$_POST['csrf_token']` or the `X-CSRF-TOKEN` header. GET parameters were intentionally excluded because URLs leak in:
+- Server access logs
+- Browser history
+- Referer headers sent to external sites
+- Proxy logs
 
-Invalidates the current token and generates a new one for the context.
-Useful for enhanced security after sensitive operations.
+**IP tracking.** Each token records the client IP (via `ClientIP::get()`) in file storage. This is for audit purposes -- IP mismatch does not cause validation failure (that would break users whose IP changes mid-session).
 
-**Parameters**
+## Gotchas
 
-* `(string) $context`
-: Context to regenerate token for
-
-**Return Values**
-
-`string`
-
-> Newly generated CSRF token
-
-Usage example:
-```php
-$csrf = new CSRFToken();
-// After password change or other sensitive operation
-$newToken = $csrf->regenerateToken('user_profile');
-echo "New token generated: " . $newToken;
-```
-
-
-<hr />
-
-
-### CSRFToken::validateRequest
-
-**Description**
-
-```php
-public validateRequest (string $context)
-```
-
-Validate token from request
-
-Convenience method that extracts token from the current request
-and validates it for the specified context.
-
-**Parameters**
-
-* `(string) $context`
-: Context to validate token against
-
-**Return Values**
-
-`bool`
-
-> True if request contains valid CSRF token, false otherwise
-
-Usage example:
-```php
-$csrf = new CSRFToken();
-if ($csrf->validateRequest('contact_form')) {
-    // Process the form submission
-    processContactForm($_POST);
-} else {
-    http_response_code(403);
-    die('CSRF validation failed');
-}
-```
-
-
-<hr />
-
-
-### CSRFToken::validateToken
-
-**Description**
-
-```php
-public validateToken (string $token, string $context)
-```
-
-Validate a CSRF token
-
-Checks if the provided token is valid for the given context.
-Verifies token existence, expiration, and context match.
-
-**Parameters**
-
-* `(string) $token`
-: Token to validate
-* `(string) $context`
-: Context the token should be valid for
-
-**Return Values**
-
-`bool`
-
-> True if token is valid, false otherwise
-
-Usage example:
-```php
-$csrf = new CSRFToken();
-$isValid = $csrf->validateToken($_POST['csrf_token'], 'user_profile');
-if ($isValid) {
-    // Process form submission
-} else {
-    // Handle invalid token
-}
-```
-
-
-<hr />
+- **`getHiddenField()` and `getMetaTag()` both call `generateToken()`.** If you call both for the same context, you get two different tokens. Only the second one will be valid in the session (the first is overwritten). Use different contexts, or call `generateToken()` once and build your own HTML.
+- **Session must be started.** The constructor calls `session_start()` if no session is active. If your framework manages sessions differently, make sure one is started before constructing `CSRFToken`.
+- **Cookie only set if headers not sent.** If you construct `CSRFToken` and generate a token after output has started, the cookie won't be set. The session and file storage will still work.
+- **Disabled mode is permissive.** When `enabled=false`, `generateToken()` returns `''` and `validateToken()` returns `true`. This means all requests pass validation. Only disable for development/testing.

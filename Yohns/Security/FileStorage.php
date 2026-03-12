@@ -102,6 +102,9 @@ class FileStorage {
 	 * ```
 	 */
 	private function getFilePath(string $table): string {
+		if (!preg_match('/^[a-zA-Z0-9_-]+$/', $table)) {
+			throw new InvalidArgumentException("Invalid table name: {$table}");
+		}
 		return $this->storageDirectory . '/' . $table . '.json';
 	}
 
@@ -141,8 +144,8 @@ class FileStorage {
 			throw new RuntimeException("Invalid JSON in file {$filePath}: " . json_last_error_msg());
 		}
 
-		// Auto cleanup if enabled
-		if ($this->autoCleanup) {
+		// Auto cleanup if enabled (throttled to once per cleanup interval)
+		if ($this->autoCleanup && $this->shouldRunCleanup($table)) {
 			$data = $this->performCleanup($table, $data);
 		}
 
@@ -427,7 +430,7 @@ class FileStorage {
 	 * ```
 	 */
 	private function generateId(): string {
-		return uniqid(more_entropy: true);
+		return bin2hex(random_bytes(16));
 	}
 
 	/**
@@ -446,6 +449,17 @@ class FileStorage {
 	 * // Expired CSRF tokens are automatically removed
 	 * ```
 	 */
+	private static array $lastCleanup = [];
+
+	private function shouldRunCleanup(string $table): bool {
+		$now = time();
+		if (!isset(self::$lastCleanup[$table]) || ($now - self::$lastCleanup[$table]) >= $this->cleanupInterval) {
+			self::$lastCleanup[$table] = $now;
+			return true;
+		}
+		return false;
+	}
+
 	private function performCleanup(string $table, array $data): array {
 		$now = time();
 		$cleaned = [];

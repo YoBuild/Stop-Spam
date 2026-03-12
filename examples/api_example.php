@@ -5,6 +5,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use Yohns\Core\Config;
 use Yohns\Security\SecurityManager;
 use Yohns\Security\TokenManager;
+use Yohns\Security\ClientIP;
 use Yohns\Security\IPSecurity;
 
 // Initialize configuration
@@ -114,7 +115,7 @@ function handleIPAnalysis($ipSecurity): array {
  */
 function handleRateLimitStatus($security): array {
 	$rateLimiter = $security->getRateLimiter();
-	$clientIP = $security->getClientIP();
+	$clientIP = ClientIP::get();
 	$action = $_GET['action'] ?? 'api_call';
 
 	$isLimited = $rateLimiter->isLimited($clientIP, $action);

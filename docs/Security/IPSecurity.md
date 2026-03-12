@@ -1,651 +1,415 @@
 # Yohns\Security\IPSecurity
 
-IPSecurity class for IP-based security management
+IP whitelist/blacklist management and reputation tracking. Provides comprehensive IP analysis including proxy detection, threat assessment, trust scoring, and automated blocking of low-trust IPs. Supports both IPv4 and IPv6 with CIDR range matching. No database required -- stores all data in JSON files via `FileStorage`.
 
-Handles IP whitelisting, blacklisting, geolocation, and reputation tracking.
-Provides comprehensive IP analysis including proxy detection, threat assessment,
-and automated security responses.
+## Configuration
 
-Usage example:
+All values come from the `ip_security` section of `config/security.php`:
+
+| Key               | Default | Description                                          |
+|--------------------|---------|------------------------------------------------------|
+| `enabled`          | `true`  | Master switch for IP security features               |
+| `whitelist`        | `[]`    | Array of IPs/CIDRs to always trust (config-level)    |
+| `blacklist`        | `[]`    | Array of IPs/CIDRs to always block (config-level)    |
+| `check_proxies`    | `true`  | Enable proxy/VPN detection during analysis           |
+| `max_proxy_depth`  | `3`     | Max proxy hops to inspect                            |
+
+Config-level whitelist/blacklist entries are merged with entries stored in FileStorage at runtime. To add IPs via config:
+
 ```php
-$ipSec = new IPSecurity();
-$analysis = $ipSec->analyzeIP('192.168.1.100');
-if ($analysis['is_blocked']) {
-    die('Access denied from your IP address');
-}
-
-// Add suspicious IP to blacklist
-$ipSec->addToBlacklist('192.168.1.100', 'Suspicious activity', 3600);
+// config/security.php
+'ip_security' => [
+	'enabled'   => true,
+	'whitelist' => ['10.0.0.0/8', '192.168.1.0/24'],
+	'blacklist' => ['198.51.100.25'],
+],
 ```
 
+## Critical Gotcha
 
+**`analyzeIP()` is a PURE READ** -- it returns trust score, threat data, and reputation but **never modifies state**. It will not block, blacklist, or update any records.
+
+**`enforcePolicy()` is the enforcement method** -- it calls `analyzeIP()` internally, then auto-blacklists the IP if the trust score falls below the threshold.
+
+```php
+// SAFE: read-only analysis, no side effects
+$analysis = $ipSec->analyzeIP('203.0.113.45');
+// Nothing is blocked, nothing is written. You decide what to do.
+
+// ENFORCEMENT: analyzes AND auto-blocks low-trust IPs
+$result = $ipSec->enforcePolicy('203.0.113.45');
+// If trust_score < 0.2, the IP is now blacklisted for 1 hour.
+```
 
 ## Methods
 
-| Name | Description |
-|------|-------------|
-|[__construct](#ipsecurity__construct)|Constructor - Initialize IP security system with configuration|
-|[addToBlacklist](#ipsecurityaddtoblacklist)|Add IP to blacklist|
-|[addToWhitelist](#ipsecurityaddtowhitelist)|Add IP to whitelist|
-|[analyzeIP](#ipsecurityanalyzeip)|Analyze IP address for security threats|
-|[bulkBlacklist](#ipsecuritybulkblacklist)|Bulk import IPs to blacklist|
-|[exportIPLists](#ipsecurityexportiplists)|Export IP lists for backup|
-|[getClientIP](#ipsecuritygetclientip)|Get the real client IP address|
-|[getSecurityStats](#ipsecuritygetsecuritystats)|Get IP security statistics|
-|[importIPLists](#ipsecurityimportiplists)|Import IP lists from backup|
-|[isBlacklisted](#ipsecurityisblacklisted)|Check if IP is blacklisted|
-|[isEnabled](#ipsecurityisenabled)|Check if IP security is enabled|
-|[isWhitelisted](#ipsecurityiswhitelisted)|Check if IP is whitelisted|
-|[performMaintenance](#ipsecurityperformmaintenance)|Perform maintenance on IP security data|
-|[removeFromBlacklist](#ipsecurityremovefromblacklist)|Remove IP from blacklist|
-|[removeFromWhitelist](#ipsecurityremovefromwhitelist)|Remove IP from whitelist|
-|[updateReputation](#ipsecurityupdatereputation)|Update IP reputation based on behavior|
+### analyzeIP(?string $ipAddress = null): array
 
-
-
-
-### IPSecurity::__construct
-
-**Description**
+Performs a full security analysis of an IP address. When `$ipAddress` is `null`, uses `ClientIP::get()`. Returns a detailed result array. **No side effects.**
 
 ```php
-public __construct (void)
+$ipSec    = new IPSecurity();
+$analysis = $ipSec->analyzeIP('203.0.113.45');
+
+// Returned array structure:
+// [
+//     'ip_address'     => '203.0.113.45',
+//     'is_blocked'     => false,
+//     'is_whitelisted' => false,
+//     'trust_score'    => 0.7,           // 0.0 (dangerous) to 1.0 (trusted)
+//     'threats'        => [
+//         [
+//             'type'        => 'proxy_detected',
+//             'severity'    => 'medium',
+//             'description' => 'Request coming through proxy/VPN',
+//         ],
+//     ],
+//     'geolocation'     => ['country' => 'US', 'city' => 'Los Angeles', ...],
+//     'reputation'      => ['score' => 0.5, 'violation_count' => 0, ...],
+//     'proxy_info'      => ['is_proxy' => true, 'proxy_type' => 'http_proxy', ...],
+//     'recommendations' => ['Increase monitoring for this IP address'],
+// ]
+
+// Use the trust score for decisions
+if ($analysis['trust_score'] < 0.3) {
+	// Require CAPTCHA or additional verification
+	requireCaptcha();
+}
 ```
 
-Constructor - Initialize IP security system with configuration
+Trust score deductions:
+- Blacklisted: score = `0.0`, `is_blocked` = `true`
+- Whitelisted: score = `1.0`, analysis stops early
+- Proxy/VPN detected: `-0.3`
+- Poor reputation (score < 0.5): `-0.4`
+- Recent violations: `-0.1` per violation (capped at `-1.0`)
+- Suspicious geolocation: `-0.2`
 
-Sets up IP security with configuration from Config class and loads
-whitelist, blacklist, and trusted proxy data from storage.
+### enforcePolicy(?string $ipAddress = null, float $threshold = 0.2, int $duration = 3600): array
 
-**Parameters**
+Calls `analyzeIP()` then auto-blacklists the IP if `trust_score < $threshold`. Whitelisted IPs are never blocked. Returns the same array as `analyzeIP()` with `is_blocked` updated.
 
-`This function has no parameters.`
-
-**Return Values**
-
-`void`
-
-
-**Throws Exceptions**
-
-
-`\Exception`
-> If FileStorage initialization fails
-
-Usage example:
 ```php
 $ipSec = new IPSecurity();
-// IP security system is now ready for analysis
+
+// Default: block IPs with trust score below 0.2 for 1 hour
+$result = $ipSec->enforcePolicy('203.0.113.45');
+
+if ($result['is_blocked']) {
+	http_response_code(403);
+	echo 'Access denied.';
+	exit;
+}
 ```
-
-<hr />
-
-
-### IPSecurity::addToBlacklist
-
-**Description**
 
 ```php
-public addToBlacklist (string $ip, string $reason, int $duration)
+// Stricter threshold: block below 0.5, for 24 hours
+$result = $ipSec->enforcePolicy('198.51.100.10', 0.5, 86400);
+
+// Lenient: only block the worst offenders
+$result = $ipSec->enforcePolicy('198.51.100.10', 0.1, 1800);
 ```
 
-Add IP to blacklist
+```php
+// Use with current client IP (null = auto-detect via ClientIP::get())
+$result = $ipSec->enforcePolicy();
+if ($result['is_blocked']) {
+	http_response_code(403);
+	exit;
+}
+```
 
-Adds an IP address or CIDR range to the blacklist with optional
-expiration time and logs the security event.
+### addToWhitelist(string $ip, string $reason = '', int $duration = 0): bool
 
-**Parameters**
+Adds an IP or CIDR range to the whitelist. Duration `0` means permanent.
 
-* `(string) $ip`
-: IP address or CIDR range to blacklist
-* `(string) $reason`
-: Reason for blacklisting (optional)
-* `(int) $duration`
-: Duration in seconds (0 = permanent)
-
-**Return Values**
-
-`bool`
-
-> True on success
-
-Usage example:
 ```php
 $ipSec = new IPSecurity();
+
+// Permanent: office network
+$ipSec->addToWhitelist('10.0.0.0/8', 'Internal office network');
+
+// Temporary: trusted partner for 24 hours
+$ipSec->addToWhitelist('203.0.113.50', 'Partner API server', 86400);
+
+// Single IP, no reason
+$ipSec->addToWhitelist('192.168.1.100');
+```
+
+### addToBlacklist(string $ip, string $reason = '', int $duration = 0): bool
+
+Adds an IP or CIDR range to the blacklist. Duration `0` means permanent. Logs a security event on every call.
+
+```php
+$ipSec = new IPSecurity();
+
 // Temporary block for 1 hour
-$ipSec->addToBlacklist('203.0.113.50', 'Brute force attempt', 3600);
+$ipSec->addToBlacklist('203.0.113.45', 'Brute force attempt', 3600);
+
 // Permanent block
-$ipSec->addToBlacklist('198.51.100.25', 'Known malicious IP', 0);
+$ipSec->addToBlacklist('198.51.100.0/24', 'Known malicious network');
+
+// Block an entire /16 range for 12 hours
+$ipSec->addToBlacklist('192.0.2.0/16', 'DDoS source range', 43200);
 ```
 
+### removeFromWhitelist(string $ip): bool
 
-<hr />
+Removes all whitelist entries matching the IP. Returns `false` if not found.
 
-
-### IPSecurity::addToWhitelist
-
-**Description**
-
-```php
-public addToWhitelist (string $ip, string $reason, int $duration)
-```
-
-Add IP to whitelist
-
-Adds an IP address or CIDR range to the whitelist with optional
-expiration time and reason for tracking purposes.
-
-**Parameters**
-
-* `(string) $ip`
-: IP address or CIDR range to whitelist
-* `(string) $reason`
-: Reason for whitelisting (optional)
-* `(int) $duration`
-: Duration in seconds (0 = permanent)
-
-**Return Values**
-
-`bool`
-
-> True on success
-
-Usage example:
 ```php
 $ipSec = new IPSecurity();
-$ipSec->addToWhitelist('192.168.1.0/24', 'Office network', 0);
-$ipSec->addToWhitelist('203.0.113.10', 'Trusted partner', 86400);
-echo "IPs added to whitelist";
+
+$removed = $ipSec->removeFromWhitelist('203.0.113.50');
+// Returns: true
+
+$removed = $ipSec->removeFromWhitelist('10.10.10.10');
+// Returns: false (was not in whitelist)
 ```
 
+### removeFromBlacklist(string $ip): bool
 
-<hr />
+Removes all blacklist entries matching the IP. Returns `false` if not found.
 
-
-### IPSecurity::analyzeIP
-
-**Description**
-
-```php
-public analyzeIP (string|null $ipAddress)
-```
-
-Analyze IP address for security threats
-
-Performs comprehensive security analysis including whitelist/blacklist checks,
-proxy detection, reputation analysis, and geolocation assessment.
-Returns detailed threat analysis with trust score and recommendations.
-
-**Parameters**
-
-* `(string|null) $ipAddress`
-: IP address to analyze (null uses client IP)
-
-**Return Values**
-
-`array`
-
-> Complete security analysis with trust score, threats, and recommendations
-
-Usage example:
 ```php
 $ipSec = new IPSecurity();
-$analysis = $ipSec->analyzeIP('203.0.113.10');
 
-echo "Trust Score: " . $analysis['trust_score'];
-if ($analysis['is_blocked']) {
-    echo "IP is blocked!";
-}
-foreach ($analysis['threats'] as $threat) {
-    echo "Threat: " . $threat['description'] . " (Severity: " . $threat['severity'] . ")";
-}
+$removed = $ipSec->removeFromBlacklist('203.0.113.45');
+// Returns: true (access restored)
 ```
 
+### isWhitelisted(string $ip): bool
 
-<hr />
+Checks if an IP matches any whitelist entry, including CIDR ranges.
 
-
-### IPSecurity::bulkBlacklist
-
-**Description**
-
-```php
-public bulkBlacklist (array $ips, string $reason)
-```
-
-Bulk import IPs to blacklist
-
-Adds multiple IP addresses to the blacklist in a single operation
-with validation and error handling.
-
-**Parameters**
-
-* `(array) $ips`
-: Array of IP addresses to blacklist
-* `(string) $reason`
-: Reason for bulk blacklisting
-
-**Return Values**
-
-`int`
-
-> Number of IPs successfully added to blacklist
-
-Usage example:
 ```php
 $ipSec = new IPSecurity();
-$maliciousIPs = ['203.0.113.10', '198.51.100.25', '192.0.2.50'];
-$added = $ipSec->bulkBlacklist($maliciousIPs, 'Threat intelligence feed');
-echo "Added {$added} IPs to blacklist";
+
+// After adding 10.0.0.0/8 to whitelist:
+$ipSec->isWhitelisted('10.0.0.1');    // true (matches CIDR)
+$ipSec->isWhitelisted('10.255.0.99'); // true (matches CIDR)
+$ipSec->isWhitelisted('11.0.0.1');    // false
 ```
 
+### isBlacklisted(string $ip): bool
 
-<hr />
+Checks if an IP matches any blacklist entry. Expired temporary entries are auto-removed on check and return `false`.
 
-
-### IPSecurity::exportIPLists
-
-**Description**
-
-```php
-public exportIPLists (void)
-```
-
-Export IP lists for backup
-
-Creates a comprehensive backup of all IP security data
-including whitelist, blacklist, and reputation information.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`array`
-
-> Complete export of IP security data
-
-Usage example:
 ```php
 $ipSec = new IPSecurity();
-$backup = $ipSec->exportIPLists();
-file_put_contents('ip_security_backup.json', json_encode($backup));
-echo "IP security data exported successfully";
+
+$ipSec->addToBlacklist('203.0.113.45', 'Test', 60); // 60-second block
+
+$ipSec->isBlacklisted('203.0.113.45'); // true (within 60 seconds)
+// ... 61 seconds later ...
+$ipSec->isBlacklisted('203.0.113.45'); // false (expired, auto-removed)
 ```
 
+### updateReputation(string $ip, string $action, float $scoreChange): void
 
-<hr />
+Adjusts an IP's reputation score. Score is clamped between `0.0` and `1.0`. New IPs start at `0.5`. Negative `$scoreChange` increments `violation_count`.
 
-
-### IPSecurity::getClientIP
-
-**Description**
-
-```php
-public getClientIP (void)
-```
-
-Get the real client IP address
-
-Determines the actual client IP address by checking various headers
-in order of priority, handling proxy scenarios and validating IPs.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`string`
-
-> Client IP address or '0.0.0.0' if unable to determine
-
-Usage example:
 ```php
 $ipSec = new IPSecurity();
-$clientIP = $ipSec->getClientIP();
-echo "Client IP: " . $clientIP;
-// Handles Cloudflare, proxies, load balancers automatically
+
+// Decrease reputation for failed login (-0.1)
+$ipSec->updateReputation('203.0.113.45', 'failed_login', -0.1);
+// Score: 0.5 -> 0.4, violation_count: 0 -> 1
+
+// Another failure
+$ipSec->updateReputation('203.0.113.45', 'failed_login', -0.1);
+// Score: 0.4 -> 0.3, violation_count: 1 -> 2
+
+// Successful auth improves reputation
+$ipSec->updateReputation('203.0.113.45', 'successful_auth', 0.05);
+// Score: 0.3 -> 0.35, violation_count stays at 2
 ```
 
+### bulkBlacklist(array $ips, string $reason = 'Bulk import'): int
 
-<hr />
-
-
-### IPSecurity::getSecurityStats
-
-**Description**
+Blacklists multiple IPs at once. Skips invalid IPs. Returns the count of successfully added entries.
 
 ```php
-public getSecurityStats (void)
+$ipSec = new IPSecurity();
+
+$malicious = ['203.0.113.10', '198.51.100.25', 'not-an-ip', '192.0.2.50'];
+$added = $ipSec->bulkBlacklist($malicious, 'Threat intelligence feed');
+// Returns: 3 ('not-an-ip' was skipped)
 ```
 
-Get IP security statistics
+### getSecurityStats(): array
 
-Returns comprehensive statistics about the IP security system
-including counts, averages, and top violators.
+Returns statistics about the IP security system.
 
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`array`
-
-> Security statistics with counts, reputation data, and violators
-
-Usage example:
 ```php
 $ipSec = new IPSecurity();
 $stats = $ipSec->getSecurityStats();
-echo "Blacklisted IPs: " . $stats['blacklist_count'];
-echo "Average reputation: " . $stats['avg_reputation_score'];
-echo "Recent events: " . $stats['recent_events'];
-foreach ($stats['top_violators'] as $violator) {
-    echo "IP: " . $violator['ip'] . " (Violations: " . $violator['violations'] . ")";
-}
+
+// $stats = [
+//     'whitelist_count'      => 5,
+//     'blacklist_count'      => 12,
+//     'tracked_ips'          => 234,
+//     'recent_events'        => 47,     // last 24 hours
+//     'avg_reputation_score' => 0.62,
+//     'top_violators'        => [
+//         ['ip' => '203.0.113.45', 'violations' => 15, 'score' => 0.1],
+//         ['ip' => '198.51.100.7', 'violations' => 8,  'score' => 0.25],
+//     ],
+// ];
 ```
 
+### performMaintenance(): array
 
-<hr />
-
-
-### IPSecurity::importIPLists
-
-**Description**
+Removes expired blacklist/whitelist entries, reputation records older than 30 days, and geolocation cache older than 7 days. Refreshes internal caches.
 
 ```php
-public importIPLists (array $data)
+$ipSec  = new IPSecurity();
+$result = $ipSec->performMaintenance();
+
+// $result = [
+//     'expired_blacklist' => 3,
+//     'expired_whitelist' => 1,
+//     'old_reputation'    => 45,
+//     'old_geolocation'   => 12,
+// ];
 ```
 
-Import IP lists from backup
+### exportIPLists() / importIPLists(array $data)
 
-Restores IP security data from a backup file including
-whitelist, blacklist, and reputation information.
+Backup and restore whitelist, blacklist, and reputation data.
 
-**Parameters**
-
-* `(array) $data`
-: Backup data to import
-
-**Return Values**
-
-`array`
-
-> Summary of import operations performed
-
-Usage example:
 ```php
 $ipSec = new IPSecurity();
-$backupData = json_decode(file_get_contents('backup.json'), true);
-$results = $ipSec->importIPLists($backupData);
-echo "Whitelist entries imported: " . $results['whitelist_imported'];
-echo "Blacklist entries imported: " . $results['blacklist_imported'];
+
+// Export
+$backup = $ipSec->exportIPLists();
+file_put_contents('ip_backup.json', json_encode($backup, JSON_PRETTY_PRINT));
+
+// Import
+$data    = json_decode(file_get_contents('ip_backup.json'), true);
+$results = $ipSec->importIPLists($data);
+// $results = [
+//     'whitelist_imported'  => 5,
+//     'blacklist_imported'  => 12,
+//     'reputation_imported' => 234,
+// ];
 ```
 
+### isEnabled(): bool
 
-<hr />
+Returns whether IP security is active based on config.
 
-
-### IPSecurity::isBlacklisted
-
-**Description**
-
-```php
-public isBlacklisted (string $ip)
-```
-
-Check if IP is blacklisted
-
-Verifies if the given IP address matches any entry in the blacklist
-and checks for expiration of temporary blacklist entries.
-
-**Parameters**
-
-* `(string) $ip`
-: IP address to check
-
-**Return Values**
-
-`bool`
-
-> True if IP is blacklisted, false otherwise
-
-Usage example:
-```php
-$ipSec = new IPSecurity();
-if ($ipSec->isBlacklisted('203.0.113.50')) {
-    http_response_code(403);
-    die('Access denied');
-}
-```
-
-
-<hr />
-
-
-### IPSecurity::isEnabled
-
-**Description**
-
-```php
-public isEnabled (void)
-```
-
-Check if IP security is enabled
-
-Returns the current enabled status of the IP security system
-based on configuration settings.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`bool`
-
-> True if IP security is enabled, false otherwise
-
-Usage example:
 ```php
 $ipSec = new IPSecurity();
 if ($ipSec->isEnabled()) {
-    $analysis = $ipSec->analyzeIP();
-    // Process security analysis
-} else {
-    echo "IP security is disabled";
+	$result = $ipSec->enforcePolicy();
 }
 ```
 
+## IPv4 and IPv6 CIDR Matching
 
-<hr />
-
-
-### IPSecurity::isWhitelisted
-
-**Description**
+The `ipInRange()` method (used internally by `isWhitelisted()`, `isBlacklisted()`, and proxy detection) supports both IPv4 and IPv6 CIDR notation using `inet_pton()` bitwise comparison.
 
 ```php
-public isWhitelisted (string $ip)
+// IPv4 CIDR -- all of these work in whitelist/blacklist:
+$ipSec->addToWhitelist('192.168.1.0/24');    // matches 192.168.1.0 - 192.168.1.255
+$ipSec->addToBlacklist('10.0.0.0/8');        // matches 10.0.0.0 - 10.255.255.255
+
+// IPv6 CIDR:
+$ipSec->addToWhitelist('2001:db8::/32');     // matches entire 2001:db8:: block
+$ipSec->addToBlacklist('fe80::/10');         // matches link-local addresses
+
+// Exact IP match (no CIDR):
+$ipSec->addToBlacklist('203.0.113.45');      // matches only this IP
+$ipSec->addToBlacklist('::1');               // matches only IPv6 loopback
 ```
 
-Check if IP is whitelisted
+## Full Example: Middleware Gate
 
-Verifies if the given IP address matches any entry in the whitelist,
-including CIDR ranges and individual IPs.
-
-**Parameters**
-
-* `(string) $ip`
-: IP address to check
-
-**Return Values**
-
-`bool`
-
-> True if IP is whitelisted, false otherwise
-
-Usage example:
 ```php
+use Yohns\Security\IPSecurity;
+use Yohns\Security\ClientIP;
+
 $ipSec = new IPSecurity();
-if ($ipSec->isWhitelisted('192.168.1.100')) {
-    echo "IP is trusted - bypassing security checks";
+
+if (!$ipSec->isEnabled()) {
+	return; // IP security disabled in config
+}
+
+$ip = ClientIP::get();
+
+// Quick check: is this IP already blacklisted?
+if ($ipSec->isBlacklisted($ip)) {
+	http_response_code(403);
+	echo json_encode(['error' => 'Access denied.']);
+	exit;
+}
+
+// Full analysis with auto-blocking
+// Block IPs with trust score below 0.3 for 2 hours
+$result = $ipSec->enforcePolicy($ip, 0.3, 7200);
+
+if ($result['is_blocked']) {
+	http_response_code(403);
+	echo json_encode([
+		'error'   => 'Access denied.',
+		'threats' => array_column($result['threats'], 'description'),
+	]);
+	exit;
+}
+
+// Log low-trust IPs for monitoring (but don't block yet)
+if ($result['trust_score'] < 0.6) {
+	error_log("Low trust IP: {$ip} (score: {$result['trust_score']})");
 }
 ```
 
-
-<hr />
-
-
-### IPSecurity::performMaintenance
-
-**Description**
+## Full Example: Admin IP Management
 
 ```php
-public performMaintenance (void)
-```
+use Yohns\Security\IPSecurity;
 
-Perform maintenance on IP security data
-
-Cleans up expired entries, old data, and refreshes caches
-to maintain optimal performance and data accuracy.
-
-**Parameters**
-
-`This function has no parameters.`
-
-**Return Values**
-
-`array`
-
-> Summary of maintenance operations performed
-
-Usage example:
-```php
 $ipSec = new IPSecurity();
-$results = $ipSec->performMaintenance();
-echo "Expired blacklist entries removed: " . $results['expired_blacklist'];
-echo "Old reputation records cleaned: " . $results['old_reputation'];
-// Run this periodically via cron job
-```
 
+// Whitelist the office
+$ipSec->addToWhitelist('203.0.113.0/24', 'Main office network');
 
-<hr />
+// Block a bad actor for 24 hours
+$ipSec->addToBlacklist('198.51.100.25', 'Scraped user data', 86400);
 
-
-### IPSecurity::removeFromBlacklist
-
-**Description**
-
-```php
-public removeFromBlacklist (string $ip)
-```
-
-Remove IP from blacklist
-
-Removes all blacklist entries matching the specified IP address
-and refreshes the internal blacklist cache.
-
-**Parameters**
-
-* `(string) $ip`
-: IP address to remove from blacklist
-
-**Return Values**
-
-`bool`
-
-> True if entries were removed, false if not found
-
-Usage example:
-```php
-$ipSec = new IPSecurity();
-if ($ipSec->removeFromBlacklist('203.0.113.50')) {
-    echo "IP removed from blacklist - access restored";
+// Check an IP before taking action
+$analysis = $ipSec->analyzeIP('192.0.2.100');
+echo "Trust score: {$analysis['trust_score']}\n";
+foreach ($analysis['threats'] as $threat) {
+	echo "  [{$threat['severity']}] {$threat['description']}\n";
 }
-```
-
-
-<hr />
-
-
-### IPSecurity::removeFromWhitelist
-
-**Description**
-
-```php
-public removeFromWhitelist (string $ip)
-```
-
-Remove IP from whitelist
-
-Removes all whitelist entries matching the specified IP address
-and refreshes the internal whitelist cache.
-
-**Parameters**
-
-* `(string) $ip`
-: IP address to remove from whitelist
-
-**Return Values**
-
-`bool`
-
-> True if entries were removed, false if not found
-
-Usage example:
-```php
-$ipSec = new IPSecurity();
-if ($ipSec->removeFromWhitelist('192.168.1.100')) {
-    echo "IP removed from whitelist";
-} else {
-    echo "IP not found in whitelist";
+foreach ($analysis['recommendations'] as $rec) {
+	echo "  Recommendation: {$rec}\n";
 }
+
+// Degrade reputation after suspicious behavior
+$ipSec->updateReputation('192.0.2.100', 'suspicious_scraping', -0.2);
+
+// View system health
+$stats = $ipSec->getSecurityStats();
+echo "Blacklisted: {$stats['blacklist_count']}, ";
+echo "Tracked IPs: {$stats['tracked_ips']}, ";
+echo "Avg reputation: {$stats['avg_reputation_score']}\n";
 ```
 
+## Storage
 
-<hr />
+Data is persisted across several FileStorage tables in the `database/` directory:
 
+| Table                | Contents                              |
+|----------------------|---------------------------------------|
+| `ip_whitelist`       | Whitelisted IPs/CIDRs with expiry    |
+| `ip_blacklist`       | Blacklisted IPs/CIDRs with expiry    |
+| `ip_reputation`      | Per-IP reputation scores and history  |
+| `ip_geolocation`     | Cached geolocation lookups (24h TTL)  |
+| `known_proxy_ranges` | Known proxy/VPN IP ranges             |
+| `security_log`       | Security events (blacklist additions) |
 
-### IPSecurity::updateReputation
+## IP Detection
 
-**Description**
-
-```php
-public updateReputation (string $ip, string $action, float $scoreChange)
-```
-
-Update IP reputation based on behavior
-
-Modifies an IP's reputation score based on observed behavior.
-Positive actions increase score, negative actions decrease it.
-
-**Parameters**
-
-* `(string) $ip`
-: IP address to update reputation for
-* `(string) $action`
-: Action type that triggered the update
-* `(float) $scoreChange`
-: Change in reputation score (-1.0 to 1.0)
-
-**Return Values**
-
-`void`
-
->
-
-Usage example:
-```php
-$ipSec = new IPSecurity();
-// Decrease reputation for failed login
-$ipSec->updateReputation('203.0.113.10', 'failed_login', -0.1);
-// Increase reputation for successful verification
-$ipSec->updateReputation('192.168.1.100', 'successful_auth', 0.05);
-```
-
-
-<hr />
+Uses `ClientIP::get()` internally when no IP is passed to `analyzeIP()` or `enforcePolicy()`. This respects the trusted proxy gate -- forwarded headers are only read when `REMOTE_ADDR` is a known proxy.

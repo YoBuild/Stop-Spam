@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"D:\\\\0-Laragon\\\\www\\\\2025_Composer_Repos\\\\Stop-Spam\" && php -l Yohns/Security/ClientIP.php && php -l Yohns/Security/RateLimiter.php && php -l Yohns/Security/IPSecurity.php && php -l Yohns/AntiSpam/SpamDetector.php)",
+      "Bash(cd \"D:/0-Laragon/www/2025_Composer_Repos/Stop-Spam\" && php -l Yohns/Security/SecurityManager.php)",
+      "Bash(cd \"D:/0-Laragon/www/2025_Composer_Repos/Stop-Spam\" && find docs -name \"*.md\" -exec wc -l {} \\\\; | sort -rn)",
+      "Bash(php -l \"D:/0-Laragon/www/2025_Composer_Repos/Stop-Spam/examples/admin_dashboard.php\" && php -l \"D:/0-Laragon/www/2025_Composer_Repos/Stop-Spam/examples/api_example.php\")",
+      "Bash(cd \"D:/0-Laragon/www/2025_Composer_Repos/Stop-Spam\" && php -l examples/admin_dashboard.php && php -l examples/api_example.php && php -l examples/bootstrap_form_example.php && php -l examples/content-analysis-examples.php)"
+    ]
+  }
+}
